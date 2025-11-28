@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ViewState, UserProfile, Room, Message } from './types';
 import { supabase } from './services/supabaseClient';
-import { getGeminiResponse } from './services/geminiService';
+// Changed import from ./services/geminiService to ./geminiService
+import { getGeminiResponse } from './geminiService';
 import { 
   Send, Lock, Globe, Terminal, LogOut, Key, Hash, 
   User as UserIcon, Loader2, Copy, Check, ArrowRight, 
