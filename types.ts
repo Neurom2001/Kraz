@@ -1,40 +1,34 @@
-export interface ActivityLog {
-  timestamp: number;
-  action: 'LOGIN' | 'LOGOUT' | 'REGISTER' | 'UPDATE_PROFILE';
-}
-
-export interface User {
-  id: string;
-  password?: string; // Stored for mock auth
-  isOnline: boolean;
-  avatar?: string;
-  activityLogs: ActivityLog[];
+export interface UserProfile {
+  id: string; // UUID from Supabase Auth
+  username: string;
+  email?: string;
 }
 
 export interface Message {
   id: string;
-  senderId: string;
-  senderAvatar?: string;
   content: string;
-  timestamp: number;
-  isSystem?: boolean;
-  isAi?: boolean;
-  roomId?: string; // null/undefined means public
+  user_id: string; // Sender UUID
+  username: string; // Display name
+  room_id: string | null; // null = public chat
+  created_at: string;
+  is_ai?: boolean;
 }
 
 export interface Room {
-  id: string;
-  key: string; // The access key
-  creatorId: string;
+  id: string; // Room Code (e.g., RM-123)
+  key: string; // Secret Key
   name: string;
-  createdAt: number;
+  creator_id: string;
+  created_at?: string;
 }
 
-export type ChatEvent = 
-  | { type: 'NEW_MESSAGE'; message: Message }
-  | { type: 'DELETE_MESSAGE'; messageId: string; roomId?: string };
-
 export enum ViewState {
+  AUTH = 'AUTH',
+  DASHBOARD = 'DASHBOARD',
+  PUBLIC_CHAT = 'PUBLIC_CHAT',
+  PRIVATE_ROOM = 'PRIVATE_ROOM',
+  PROFILE = 'PROFILE'
+}export enum ViewState {
   AUTH = 'AUTH',
   DASHBOARD = 'DASHBOARD',
   PUBLIC_CHAT = 'PUBLIC_CHAT',
