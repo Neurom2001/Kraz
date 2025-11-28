@@ -1,205 +1,181 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ViewState, User, Room, Message, ChatEvent } from './types';
-import { AuthService, RoomService, ChatService } from './services/mockBackend';
+import { ViewState, UserProfile, Room, Message } from './types';
+import { supabase } from './services/supabaseClient';
 import { getGeminiResponse } from './services/geminiService';
 import { 
   Send, Lock, Globe, Terminal, LogOut, Key, Hash, 
   User as UserIcon, Loader2, Copy, Check, ArrowRight, 
-  Plus, MessageSquare, Trash2, Settings, Shield, 
-  Edit2, X
+  Plus, MessageSquare, Trash2, Settings, Shield, X
 } from 'lucide-react';
 
 const App: React.FC = () => {
-  // State
+  // View State
   const [view, setView] = useState<ViewState>(ViewState.AUTH);
-  const [user, setUser] = useState<User | null>(null);
+  
+  // Data State
+  const [user, setUser] = useState<UserProfile | null>(null);
   const [activeRoom, setActiveRoom] = useState<Room | null>(null);
-  const activeRoomRef = useRef<string | null>(null); 
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [userRooms, setUserRooms] = useState<Room[]>([]);
   
-  // Auth Inputs
-  const [isRegistering, setIsRegistering] = useState(false);
-  const [userIdInput, setUserIdInput] = useState('');
+  // Inputs
+  const [emailInput, setEmailInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
+  const [usernameInput, setUsernameInput] = useState('');
+  const [isRegistering, setIsRegistering] = useState(false);
   const [authError, setAuthError] = useState('');
-  
-  // Profile Inputs
-  const [oldPassInput, setOldPassInput] = useState('');
-  const [newPassInput, setNewPassInput] = useState('');
-  const [profileMessage, setProfileMessage] = useState('');
-  const [editingRoomId, setEditingRoomId] = useState<string | null>(null);
-  const [editRoomKeyInput, setEditRoomKeyInput] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  // Message Inputs
   const [messageInput, setMessageInput] = useState('');
-  
-  // Room Inputs
   const [roomNameInput, setRoomNameInput] = useState('');
   const [joinRoomId, setJoinRoomId] = useState('');
   const [joinRoomKey, setJoinRoomKey] = useState('');
   const [joinError, setJoinError] = useState('');
-  const [copied, setCopied] = useState(false);
-  const [copyFeedbackId, setCopyFeedbackId] = useState<string | null>(null);
 
-  // Messages
-  const [publicMessages, setPublicMessages] = useState<Message[]>([]);
-  const [privateMessages, setPrivateMessages] = useState<Message[]>([]);
   const [isAiThinking, setIsAiThinking] = useState(false);
-
+  const [copied, setCopied] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Sync ref for socket callbacks
-  useEffect(() => {
-    activeRoomRef.current = activeRoom ? activeRoom.id : null;
-  }, [activeRoom]);
+  // --- 1. Authentication & Initialization ---
 
-  // Initialize Chat Subscription
   useEffect(() => {
-    setPublicMessages(ChatService.getPublicMessages());
-
-    const unsubscribe = ChatService.subscribe((event: ChatEvent) => {
-      if (event.type === 'NEW_MESSAGE') {
-        const msg = event.message;
-        if (!msg.roomId) {
-          setPublicMessages(prev => [...prev, msg]);
-        } else {
-          if (activeRoomRef.current === msg.roomId) {
-            setPrivateMessages(prev => [...prev, msg]);
-          }
-        }
-      } else if (event.type === 'DELETE_MESSAGE') {
-        const { messageId, roomId } = event;
-        if (!roomId) {
-          setPublicMessages(prev => prev.filter(m => m.id !== messageId));
-        } else if (activeRoomRef.current === roomId) {
-          setPrivateMessages(prev => prev.filter(m => m.id !== messageId));
-        }
+    // Check active session on load
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        fetchUserProfile(session.user.id, session.user.email);
       }
     });
-    return unsubscribe;
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        fetchUserProfile(session.user.id, session.user.email);
+      } else {
+        setUser(null);
+        setView(ViewState.AUTH);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  // Auto scroll
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [publicMessages, privateMessages, view, isAiThinking]);
+  const fetchUserProfile = async (userId: string, email?: string) => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single();
 
-  // --- Handlers ---
-
-  const handleAuth = (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthError('');
-    if (!userIdInput.trim() || !passwordInput.trim()) {
-      setAuthError('CREDENTIALS_REQUIRED');
-      return;
-    }
-
-    if (isRegistering && passwordInput.trim().length < 8) {
-      setAuthError('PASSWORD MUST BE AT LEAST 8 CHARACTERS');
-      return;
-    }
-
-    try {
-      let loggedUser;
-      if (isRegistering) {
-        loggedUser = AuthService.register(userIdInput.trim(), passwordInput.trim());
-      } else {
-        loggedUser = AuthService.login(userIdInput.trim(), passwordInput.trim());
-      }
-      setUser(loggedUser);
+    if (data) {
+      setUser({ ...data, email });
       setView(ViewState.DASHBOARD);
-      setPasswordInput('');
-    } catch (err: any) {
-      setAuthError(err.message || 'AUTH_FAILED');
+      fetchUserRooms(userId);
+    } else if (email) {
+      // Fallback if profile doesn't exist yet
+      setUser({ id: userId, username: email.split('@')[0], email });
+      setView(ViewState.DASHBOARD);
     }
   };
 
-  const handleLogout = () => {
-    if (user) AuthService.logout(user.id);
-    setUser(null);
-    setActiveRoom(null);
-    setView(ViewState.AUTH);
-    setUserIdInput('');
-    setPasswordInput('');
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
     setAuthError('');
-  };
+    setLoading(true);
 
-  const handleChangePassword = () => {
-    if (!user) return;
     try {
-      const updatedUser = AuthService.changePassword(user.id, oldPassInput, newPassInput);
-      setUser({...updatedUser});
-      setOldPassInput('');
-      setNewPassInput('');
-      setProfileMessage('ACCESS CREDENTIALS ROTATED');
-      setTimeout(() => setProfileMessage(''), 2000);
-    } catch (e: any) {
-      setProfileMessage(`ERROR: ${e.message}`);
+      if (isRegistering) {
+        // 1. Sign Up
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+          email: emailInput,
+          password: passwordInput,
+        });
+        if (authError) throw authError;
+
+        if (authData.user) {
+          // 2. Create Profile
+          const { error: profileError } = await supabase
+            .from('profiles')
+            .insert([{ id: authData.user.id, username: usernameInput }]);
+          
+          if (profileError) {
+             console.error("Profile creation failed:", profileError);
+          }
+          alert("Registration successful! You can now login.");
+          setIsRegistering(false);
+        }
+      } else {
+        // Login
+        const { error } = await supabase.auth.signInWithPassword({
+          email: emailInput,
+          password: passwordInput,
+        });
+        if (error) throw error;
+      }
+    } catch (err: any) {
+      setAuthError(err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleCreateRoom = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user || !roomNameInput.trim()) return;
-    const room = RoomService.createRoom(user.id, roomNameInput.trim());
-    enterRoom(room, true);
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+    setMessages([]);
   };
 
-  const handleJoinRoom = (e: React.FormEvent) => {
-    e.preventDefault();
-    setJoinError('');
-    if (!joinRoomId.trim() || !joinRoomKey.trim()) {
-      setJoinError('MISSING CREDENTIALS');
+  // --- 2. Data Fetching & Realtime ---
+
+  const fetchUserRooms = async (userId: string) => {
+    const { data } = await supabase.from('rooms').select('*').eq('creator_id', userId);
+    if (data) setUserRooms(data);
+  };
+
+  const fetchMessages = async () => {
+    let query = supabase.from('messages').select('*').order('created_at', { ascending: true });
+    
+    if (view === ViewState.PUBLIC_CHAT) {
+      query = query.is('room_id', null);
+    } else if (view === ViewState.PRIVATE_ROOM && activeRoom) {
+      query = query.eq('room_id', activeRoom.id);
+    } else {
       return;
     }
-    const isValid = RoomService.validateRoomAccess(joinRoomId.trim(), joinRoomKey.trim());
-    if (isValid) {
-      const room = RoomService.getRoom(joinRoomId.trim());
-      if (room) {
-        enterRoom(room);
-      } else {
-        setJoinError('ROOM NOT FOUND');
-      }
-    } else {
-      setJoinError('ACCESS DENIED: INVALID ID OR KEY');
-    }
+
+    const { data } = await query;
+    if (data) setMessages(data);
   };
 
-  const handleUpdateRoomKey = (roomId: string) => {
-    if(!user || !editRoomKeyInput.trim()) return;
-    try {
-      RoomService.updateRoomKey(roomId, user.id, editRoomKeyInput.trim());
-      setEditingRoomId(null);
-      setEditRoomKeyInput('');
-      setProfileMessage('ROOM KEY UPDATED');
-      setTimeout(() => setProfileMessage(''), 2000);
-    } catch (e) {
-      setProfileMessage('UPDATE FAILED');
-    }
-  };
+  useEffect(() => {
+    if (view === ViewState.PUBLIC_CHAT || view === ViewState.PRIVATE_ROOM) {
+      fetchMessages();
 
-  const enterRoom = (room: Room, isNew = false) => {
-    setActiveRoom(room);
-    const history = ChatService.getRoomMessages(room.id);
-    const sysMsg: Message = {
-      id: `sys-${Date.now()}`,
-      senderId: 'SYSTEM',
-      content: isNew ? `ROOM CREATED. SECURE CHANNEL ESTABLISHED.` : `CONNECTED TO SECURE ROOM: ${room.name}`,
-      timestamp: Date.now(),
-      isSystem: true,
-      roomId: room.id
-    };
-    
-    // Simple check to avoid spamming system messages on re-entry
-    const msgs = history.length === 0 || isNew ? [...history, sysMsg] : history;
-    setPrivateMessages(msgs);
-    
-    setRoomNameInput('');
-    setJoinRoomId('');
-    setJoinRoomKey('');
-    setView(ViewState.PRIVATE_ROOM);
-  };
+      // Realtime Subscription
+      const channel = supabase
+        .channel('realtime_messages')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+          const newMsg = payload.new as Message;
+          // Filter incoming messages based on current view
+          if (view === ViewState.PUBLIC_CHAT && !newMsg.room_id) {
+            setMessages(prev => [...prev, newMsg]);
+          } else if (view === ViewState.PRIVATE_ROOM && activeRoom && newMsg.room_id === activeRoom.id) {
+            setMessages(prev => [...prev, newMsg]);
+          }
+        })
+        .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' }, (payload) => {
+          setMessages(prev => prev.filter(m => m.id !== payload.old.id));
+        })
+        .subscribe();
+
+      return () => { supabase.removeChannel(channel); };
+    }
+  }, [view, activeRoom]);
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages, isAiThinking]);
+
+  // --- 3. Actions ---
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -207,466 +183,286 @@ const App: React.FC = () => {
     const content = messageInput.trim();
     setMessageInput('');
 
-    if (view === ViewState.PUBLIC_CHAT) {
-      ChatService.sendPublicMessage(user, content);
-      if (content.toLowerCase().startsWith('/ai')) {
-        setIsAiThinking(true);
-        const prompt = content.replace('/ai', '').trim();
-        try {
-          const aiResponse = await getGeminiResponse(prompt);
-          ChatService.sendPublicMessage('AI_CORE', aiResponse, true);
-        } finally {
-          setIsAiThinking(false);
-        }
+    // Insert into DB
+    const { error } = await supabase.from('messages').insert([{
+      content: content,
+      user_id: user.id,
+      username: user.username,
+      room_id: view === ViewState.PRIVATE_ROOM && activeRoom ? activeRoom.id : null
+    }]);
+
+    if (error) console.error("Send failed:", error);
+
+    // AI Handler
+    if (view === ViewState.PUBLIC_CHAT && content.toLowerCase().startsWith('/ai')) {
+      setIsAiThinking(true);
+      const prompt = content.replace('/ai', '').trim();
+      const aiResponse = await getGeminiResponse(prompt);
+      
+      await supabase.from('messages').insert([{
+        content: aiResponse,
+        user_id: '00000000-0000-0000-0000-000000000000', // Fake ID for AI
+        username: 'AI_CORE',
+        is_ai: true,
+        room_id: null
+      }]);
+      setIsAiThinking(false);
+    }
+  };
+
+  const handleDeleteMessage = async (msgId: string, senderId: string) => {
+    if (!user || user.id !== senderId) return;
+    if (window.confirm("Delete this message permanently?")) {
+      await supabase.from('messages').delete().eq('id', msgId);
+    }
+  };
+
+  const handleCreateRoom = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !roomNameInput.trim()) return;
+    
+    // Generate simple ID like RM-X9F
+    const roomId = `RM-${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
+    const roomKey = Math.random().toString(36).substr(2, 6).toUpperCase();
+
+    const { data, error } = await supabase.from('rooms').insert([{
+      id: roomId,
+      key: roomKey,
+      name: roomNameInput.trim(),
+      creator_id: user.id
+    }]).select().single();
+
+    if (error) {
+      alert("Failed to create room: " + error.message);
+    } else if (data) {
+      setRoomNameInput('');
+      fetchUserRooms(user.id);
+      enterRoom(data);
+    }
+  };
+
+  const handleJoinRoom = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setJoinError('');
+    
+    const { data, error } = await supabase
+      .from('rooms')
+      .select('*')
+      .eq('id', joinRoomId.trim())
+      .single();
+
+    if (error || !data) {
+      setJoinError('ROOM NOT FOUND');
+    } else {
+      if (data.key === joinRoomKey.trim()) {
+        enterRoom(data);
+      } else {
+        setJoinError('INVALID KEY');
       }
-    } else if (view === ViewState.PRIVATE_ROOM && activeRoom) {
-      ChatService.sendPrivateMessage(user, content, activeRoom.id);
     }
   };
 
-  const handleDeleteMessage = (msgId: string) => {
-    if (!user) return;
-    try {
-      ChatService.deleteMessage(msgId, user.id);
-    } catch (e) {
-      console.error("Failed to delete message");
-    }
+  const enterRoom = (room: Room) => {
+    setActiveRoom(room);
+    setJoinRoomId('');
+    setJoinRoomKey('');
+    setView(ViewState.PRIVATE_ROOM);
   };
 
-  const copyRoomInfo = () => {
-    if (!activeRoom) return;
-    const info = `ID: ${activeRoom.id} | KEY: ${activeRoom.key}`;
-    navigator.clipboard.writeText(info);
+  // --- Render Helpers ---
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleCopyMessage = (content: string, id: string) => {
-    navigator.clipboard.writeText(content);
-    setCopyFeedbackId(id);
-    setTimeout(() => setCopyFeedbackId(null), 1000);
-  };
+  // --- Views ---
 
-  const handleDeleteRequest = (msg: Message) => {
-    if (!user || msg.senderId !== user.id || msg.isSystem) return;
-    if (window.confirm("CONFIRM DELETE: Permanently remove this message?")) {
-      handleDeleteMessage(msg.id);
-    }
-  };
-
-  // --- Render Functions ---
-
-  const renderAuth = () => (
-    <div className="flex flex-col items-center justify-center h-full p-4 animate-in fade-in duration-700">
-      <div className="w-full max-w-md border border-terminal-green/50 p-8 bg-terminal-gray/10 shadow-[0_0_15px_rgba(0,255,65,0.1)]">
-        <div className="flex justify-center mb-6">
-          <Terminal size={48} className="text-terminal-green animate-pulse" />
-        </div>
-        <h1 className="text-2xl font-bold mb-2 text-center tracking-widest text-terminal-green">CHAT FROM ANYWHERE</h1>
-        <div className="flex justify-center gap-4 mb-6 text-sm">
-           <button 
-             onClick={() => { setIsRegistering(false); setAuthError(''); }}
-             className={`px-4 py-1 transition-colors ${!isRegistering ? 'text-terminal-green border-b border-terminal-green' : 'text-terminal-dim hover:text-terminal-text'}`}
-           >
-             LOGIN
-           </button>
-           <button 
-             onClick={() => { setIsRegistering(true); setAuthError(''); }}
-             className={`px-4 py-1 transition-colors ${isRegistering ? 'text-terminal-green border-b border-terminal-green' : 'text-terminal-dim hover:text-terminal-text'}`}
-           >
-             REGISTER
-           </button>
-        </div>
-
-        <form onSubmit={handleAuth} className="space-y-4">
-          <div>
-            <label className="block text-terminal-dim text-xs mb-1 tracking-wider">USER ID</label>
-            <div className="relative">
-              <UserIcon size={16} className="absolute left-3 top-3 text-terminal-green" />
-              <input
-                type="text"
-                value={userIdInput}
-                onChange={(e) => setUserIdInput(e.target.value)}
-                className="w-full bg-terminal-gray border border-terminal-green/30 text-terminal-text pl-10 pr-4 py-2 focus:outline-none focus:border-terminal-green focus:shadow-[0_0_10px_rgba(0,255,65,0.2)] placeholder-terminal-dim/50"
-                placeholder={isRegistering ? "CREATE UNIQUE ID" : "ENTER USER ID"}
-                autoFocus
-              />
-            </div>
+  if (view === ViewState.AUTH) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-terminal-bg text-terminal-text">
+        <div className="w-full max-w-md border border-terminal-green/50 p-8 bg-terminal-gray/10 shadow-[0_0_15px_rgba(0,255,65,0.1)]">
+          <div className="flex justify-center mb-6">
+            <Terminal size={48} className="text-terminal-green animate-pulse" />
           </div>
-
-          <div>
-            <label className="block text-terminal-dim text-xs mb-1 tracking-wider">PASSWORD</label>
-            <div className="relative">
-              <Key size={16} className="absolute left-3 top-3 text-terminal-green" />
-              <input
-                type="password"
-                value={passwordInput}
-                onChange={(e) => setPasswordInput(e.target.value)}
-                className="w-full bg-terminal-gray border border-terminal-green/30 text-terminal-text pl-10 pr-4 py-2 focus:outline-none focus:border-terminal-green focus:shadow-[0_0_10px_rgba(0,255,65,0.2)] placeholder-terminal-dim/50"
-                placeholder={isRegistering ? "CREATE PASSWORD (MIN 8 CHARS)" : "ENTER PASSWORD"}
-              />
-            </div>
-          </div>
+          <h1 className="text-2xl font-bold mb-6 text-center tracking-widest text-terminal-green">SECURE TERMINAL</h1>
           
-          {authError && (
-            <div className="text-terminal-alert text-xs text-center border border-terminal-alert/30 p-2 bg-terminal-alert/5">
-              ERROR: {authError}
+          <div className="flex gap-4 mb-6 text-sm justify-center">
+             <button onClick={() => setIsRegistering(false)} className={`pb-1 ${!isRegistering ? 'text-terminal-green border-b border-terminal-green' : 'text-terminal-dim'}`}>LOGIN</button>
+             <button onClick={() => setIsRegistering(true)} className={`pb-1 ${isRegistering ? 'text-terminal-green border-b border-terminal-green' : 'text-terminal-dim'}`}>REGISTER</button>
+          </div>
+
+          <form onSubmit={handleAuth} className="space-y-4">
+            {isRegistering && (
+              <div>
+                <label className="text-xs text-terminal-dim block mb-1">USERNAME</label>
+                <input type="text" value={usernameInput} onChange={e => setUsernameInput(e.target.value)} className="w-full bg-terminal-dark border border-terminal-green/30 p-2 text-terminal-text focus:border-terminal-green outline-none" placeholder="Display Name" />
+              </div>
+            )}
+            <div>
+              <label className="text-xs text-terminal-dim block mb-1">EMAIL</label>
+              <input type="email" value={emailInput} onChange={e => setEmailInput(e.target.value)} className="w-full bg-terminal-dark border border-terminal-green/30 p-2 text-terminal-text focus:border-terminal-green outline-none" placeholder="user@example.com" />
             </div>
-          )}
-
-          <button
-            type="submit"
-            className="w-full bg-terminal-green text-terminal-dark font-bold py-2 hover:bg-opacity-90 transition-all flex items-center justify-center gap-2 group"
-          >
-            {isRegistering ? 'INITIALIZE USER' : 'AUTHENTICATE'}
-            <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
-          </button>
-        </form>
+            <div>
+              <label className="text-xs text-terminal-dim block mb-1">PASSWORD</label>
+              <input type="password" value={passwordInput} onChange={e => setPasswordInput(e.target.value)} className="w-full bg-terminal-dark border border-terminal-green/30 p-2 text-terminal-text focus:border-terminal-green outline-none" placeholder="******" />
+            </div>
+            
+            {authError && <div className="text-terminal-alert text-xs p-2 border border-terminal-alert/30">{authError}</div>}
+            
+            <button disabled={loading} className="w-full bg-terminal-green text-black font-bold py-2 hover:bg-opacity-90 flex justify-center">
+              {loading ? <Loader2 className="animate-spin"/> : (isRegistering ? 'INITIALIZE USER' : 'AUTHENTICATE')}
+            </button>
+          </form>
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
 
-  const renderDashboard = () => (
-    <div className="flex flex-col h-full max-w-4xl mx-auto p-4 w-full">
-      <header className="flex justify-between items-center py-6 border-b border-terminal-green/20 mb-8">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 border border-terminal-green rounded flex items-center justify-center bg-terminal-gray/20">
-            <UserIcon className="text-terminal-green" size={24} />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold tracking-wider text-terminal-green">CHAT FROM ANYWHERE</h1>
-            <p className="text-xs text-terminal-dim">USER: <span className="text-terminal-text">{user?.id}</span></p>
+  if (view === ViewState.DASHBOARD) {
+    return (
+      <div className="min-h-screen bg-terminal-bg text-terminal-text p-4">
+        <div className="max-w-4xl mx-auto">
+          <header className="flex justify-between items-center py-6 border-b border-terminal-green/20 mb-8">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 border border-terminal-green rounded flex items-center justify-center bg-terminal-gray/20">
+                <UserIcon className="text-terminal-green" size={24} />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold tracking-wider text-terminal-green">DASHBOARD</h1>
+                <p className="text-xs text-terminal-dim">USER: <span className="text-terminal-text">{user?.username}</span></p>
+              </div>
+            </div>
+            <button onClick={handleLogout} className="text-terminal-alert border border-terminal-alert/30 px-3 py-1 text-sm hover:bg-terminal-alert/10 flex items-center gap-2">
+              <LogOut size={14} /> LOGOUT
+            </button>
+          </header>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <button onClick={() => setView(ViewState.PUBLIC_CHAT)} className="group h-48 border border-terminal-green/30 bg-terminal-gray/10 hover:bg-terminal-gray/20 p-6 text-left flex flex-col justify-between relative overflow-hidden transition-all">
+              <Globe className="absolute top-4 right-4 text-terminal-green/10 group-hover:text-terminal-green/20 transition-all" size={80} />
+              <div className="flex items-center gap-3 z-10">
+                <MessageSquare className="text-terminal-green" size={24} />
+                <h3 className="text-lg font-bold">PUBLIC CHANNEL</h3>
+              </div>
+              <p className="text-terminal-dim text-sm z-10">Global access point. AI enabled.</p>
+            </button>
+
+            <div className="space-y-6">
+              <div className="border border-terminal-green/30 bg-terminal-gray/10 p-6">
+                 <h3 className="font-bold text-terminal-text mb-4 flex gap-2"><Plus size={20} className="text-terminal-green"/> CREATE ROOM</h3>
+                 <form onSubmit={handleCreateRoom} className="flex gap-2">
+                    <input type="text" value={roomNameInput} onChange={e => setRoomNameInput(e.target.value)} placeholder="ROOM NAME" className="flex-1 bg-terminal-dark border border-terminal-dim/30 px-3 py-2 text-sm text-white outline-none focus:border-terminal-green"/>
+                    <button className="bg-terminal-green/20 text-terminal-green border border-terminal-green/50 px-4 py-2 text-sm font-bold hover:bg-terminal-green hover:text-black">CREATE</button>
+                 </form>
+              </div>
+
+              <div className="border border-terminal-green/30 bg-terminal-gray/10 p-6">
+                 <h3 className="font-bold text-terminal-text mb-4 flex gap-2"><Hash size={20} className="text-terminal-green"/> JOIN ROOM</h3>
+                 <form onSubmit={handleJoinRoom} className="space-y-2">
+                    <input type="text" value={joinRoomId} onChange={e => setJoinRoomId(e.target.value)} placeholder="ROOM ID (e.g. RM-ABC)" className="w-full bg-terminal-dark border border-terminal-dim/30 px-3 py-2 text-sm text-white outline-none focus:border-terminal-green"/>
+                    <div className="flex gap-2">
+                      <input type="password" value={joinRoomKey} onChange={e => setJoinRoomKey(e.target.value)} placeholder="ACCESS KEY" className="flex-1 bg-terminal-dark border border-terminal-dim/30 px-3 py-2 text-sm text-white outline-none focus:border-terminal-green"/>
+                      <button className="bg-terminal-green/20 text-terminal-green border border-terminal-green/50 px-4 py-2 text-sm font-bold hover:bg-terminal-green hover:text-black">JOIN</button>
+                    </div>
+                    {joinError && <p className="text-terminal-alert text-xs">{joinError}</p>}
+                 </form>
+              </div>
+            </div>
+            
+            {/* My Rooms List */}
+             <div className="md:col-span-2 border border-terminal-green/30 bg-terminal-gray/10 p-6">
+                <h3 className="font-bold text-terminal-text mb-4">MY ROOMS</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {userRooms.map(r => (
+                    <div key={r.id} className="bg-terminal-dark border border-terminal-dim/20 p-3 flex justify-between items-center">
+                      <div>
+                        <div className="font-bold text-sm">{r.name}</div>
+                        <div className="text-[10px] text-terminal-dim font-mono">ID: {r.id} | KEY: {r.key}</div>
+                      </div>
+                      <button onClick={() => enterRoom(r)} className="text-terminal-green text-xs hover:underline">ENTER &rarr;</button>
+                    </div>
+                  ))}
+                  {userRooms.length === 0 && <p className="text-terminal-dim text-xs">No active rooms.</p>}
+                </div>
+             </div>
           </div>
         </div>
-        <div className="flex gap-2">
-          <button onClick={() => setView(ViewState.PROFILE)} className="text-terminal-text hover:text-terminal-green flex items-center gap-2 text-sm px-3 py-1 border border-terminal-dim/30 hover:border-terminal-green transition-colors">
-            <Settings size={14} /> SYSTEM CONFIG
-          </button>
-          <button onClick={handleLogout} className="text-terminal-alert hover:text-white flex items-center gap-2 text-sm px-3 py-1 border border-terminal-alert/30 hover:bg-terminal-alert/10 transition-colors">
-            <LogOut size={14} /> LOGOUT
-          </button>
-        </div>
+      </div>
+    );
+  }
+
+  // Chat View (Public or Private)
+  const isPublic = view === ViewState.PUBLIC_CHAT;
+  return (
+    <div className="flex flex-col h-screen bg-terminal-bg text-terminal-text">
+      <header className="p-4 border-b border-terminal-green/30 bg-terminal-gray/10 flex justify-between items-center sticky top-0 z-10 backdrop-blur-md">
+         <div className="flex items-center gap-4">
+           <button onClick={() => setView(ViewState.DASHBOARD)} className="hover:text-terminal-green"><ArrowRight className="rotate-180" size={20}/></button>
+           <div>
+             <h2 className="font-bold text-terminal-green flex items-center gap-2">
+               {isPublic ? <Globe size={18}/> : <Lock size={18}/>} 
+               {isPublic ? "PUBLIC CHANNEL" : activeRoom?.name}
+             </h2>
+             {!isPublic && activeRoom && (
+               <div className="text-[10px] text-terminal-dim flex gap-2">
+                 <span>ID: {activeRoom.id}</span>
+                 <button onClick={() => copyToClipboard(activeRoom.key)} className="text-terminal-green hover:underline">
+                   {copied ? "COPIED" : "COPY KEY"}
+                 </button>
+               </div>
+             )}
+           </div>
+         </div>
+         <div className="flex items-center gap-2 text-xs text-terminal-green animate-pulse">
+            <div className="w-2 h-2 bg-terminal-green rounded-full"></div> LIVE
+         </div>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 flex-1 items-start">
-        <button 
-          onClick={() => setView(ViewState.PUBLIC_CHAT)}
-          className="group relative h-48 border border-terminal-green/30 bg-terminal-gray/20 hover:bg-terminal-gray/40 hover:border-terminal-green transition-all p-6 text-left flex flex-col justify-between overflow-hidden"
-        >
-          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-            <Globe size={100} />
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-terminal-green/10 rounded">
-              <MessageSquare className="text-terminal-green" size={24} />
-            </div>
-            <h3 className="text-lg font-bold text-terminal-text">PUBLIC CHANNEL</h3>
-          </div>
-          <div>
-            <p className="text-terminal-dim text-sm mb-2">Global access point. AI core active.</p>
-            <span className="text-terminal-green text-xs flex items-center gap-1 group-hover:gap-2 transition-all">
-              CONNECT <ArrowRight size={12} />
-            </span>
-          </div>
-        </button>
-
-        <div className="space-y-6">
-          <div className="border border-terminal-green/30 bg-terminal-gray/20 p-6">
-             <div className="flex items-center gap-3 mb-4">
-                <Plus className="text-terminal-green" size={20} />
-                <h3 className="font-bold text-terminal-text">INITIATE SECURE ROOM</h3>
-             </div>
-             <form onSubmit={handleCreateRoom} className="flex gap-2">
-                <input 
-                  type="text" 
-                  value={roomNameInput}
-                  onChange={e => setRoomNameInput(e.target.value)}
-                  placeholder="ROOM IDENTIFIER"
-                  className="flex-1 bg-terminal-dark border border-terminal-dim/30 px-3 py-2 text-sm focus:border-terminal-green focus:outline-none text-terminal-text placeholder-terminal-dim/40"
-                />
-                <button type="submit" className="bg-terminal-green/10 text-terminal-green border border-terminal-green/50 px-4 py-2 text-sm hover:bg-terminal-green hover:text-terminal-dark transition-colors font-bold">
-                  CREATE
-                </button>
-             </form>
-          </div>
-
-          <div className="border border-terminal-green/30 bg-terminal-gray/20 p-6">
-             <div className="flex items-center gap-3 mb-4">
-                <Hash className="text-terminal-green" size={20} />
-                <h3 className="font-bold text-terminal-text">JOIN ENCRYPTED NET</h3>
-             </div>
-             <form onSubmit={handleJoinRoom} className="space-y-3">
-                <input 
-                  type="text" 
-                  value={joinRoomId}
-                  onChange={e => setJoinRoomId(e.target.value)}
-                  placeholder="ROOM ID (e.g. RM-X9F2)"
-                  className="w-full bg-terminal-dark border border-terminal-dim/30 px-3 py-2 text-sm focus:border-terminal-green focus:outline-none text-terminal-text placeholder-terminal-dim/40"
-                />
-                <div className="flex gap-2">
-                  <input 
-                    type="password" 
-                    value={joinRoomKey}
-                    onChange={e => setJoinRoomKey(e.target.value)}
-                    placeholder="ACCESS KEY"
-                    className="flex-1 bg-terminal-dark border border-terminal-dim/30 px-3 py-2 text-sm focus:border-terminal-green focus:outline-none text-terminal-text placeholder-terminal-dim/40"
-                  />
-                  <button type="submit" className="bg-terminal-green/10 text-terminal-green border border-terminal-green/50 px-4 py-2 text-sm hover:bg-terminal-green hover:text-terminal-dark transition-colors font-bold">
-                    JOIN
-                  </button>
-                </div>
-                {joinError && <p className="text-terminal-alert text-xs border-l-2 border-terminal-alert pl-2">{joinError}</p>}
-             </form>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderProfile = () => {
-    if (!user) return null;
-    const userRooms = RoomService.getUserRooms(user.id);
-
-    return (
-      <div className="flex flex-col h-full max-w-5xl mx-auto p-4 w-full overflow-y-auto">
-        <header className="flex items-center gap-4 py-6 border-b border-terminal-green/20 mb-8">
-           <button onClick={() => setView(ViewState.DASHBOARD)} className="text-terminal-dim hover:text-terminal-green transition-colors">
-             <ArrowRight size={24} className="rotate-180" />
-           </button>
-           <h1 className="text-xl font-bold tracking-wider text-terminal-green flex items-center gap-2">
-             <Settings size={20} /> SYSTEM CONFIGURATION
-           </h1>
-        </header>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-           {/* Security */}
-           <div className="border border-terminal-green/30 bg-terminal-gray/20 p-6 relative overflow-hidden">
-              <div className="absolute top-0 right-0 p-4 opacity-5">
-                 <Shield size={100} />
-              </div>
-              <h3 className="font-bold text-terminal-text mb-4 flex items-center gap-2 border-b border-terminal-dim/20 pb-2">
-                 <Key size={16} className="text-terminal-green" /> SECURITY CREDENTIALS
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                   <label className="text-xs text-terminal-dim">CURRENT PASSWORD</label>
-                   <input 
-                     type="password" 
-                     value={oldPassInput}
-                     onChange={e => setOldPassInput(e.target.value)}
-                     className="w-full bg-terminal-dark border border-terminal-dim/30 px-3 py-2 text-sm text-terminal-text focus:border-terminal-green focus:outline-none"
-                   />
-                </div>
-                <div className="space-y-1">
-                   <label className="text-xs text-terminal-dim">NEW PASSWORD</label>
-                   <input 
-                     type="password" 
-                     value={newPassInput}
-                     onChange={e => setNewPassInput(e.target.value)}
-                     className="w-full bg-terminal-dark border border-terminal-dim/30 px-3 py-2 text-sm text-terminal-text focus:border-terminal-green focus:outline-none"
-                   />
-                </div>
-              </div>
-              <div className="mt-4 flex justify-end">
-                 <button onClick={handleChangePassword} className="bg-terminal-alert/10 text-terminal-alert border border-terminal-alert/30 px-6 py-2 hover:bg-terminal-alert hover:text-black transition-colors text-xs font-bold tracking-wider">
-                   UPDATE PASSWORD
-                 </button>
-              </div>
-              {profileMessage && <div className="mt-2 text-center text-xs text-terminal-green animate-pulse bg-terminal-green/5 py-1">{profileMessage}</div>}
-           </div>
-
-           <div className="grid grid-cols-1 gap-6">
-              {/* Rooms Manager */}
-              <div className="border border-terminal-green/30 bg-terminal-gray/20 p-6 flex flex-col h-64">
-                 <h3 className="font-bold text-terminal-text mb-4 flex items-center gap-2 pb-2 border-b border-terminal-dim/20">
-                    <Hash size={16} className="text-terminal-green" /> OWNED ROOMS
-                 </h3>
-                 <div className="flex-1 overflow-y-auto pr-2 space-y-2">
-                    {userRooms.length === 0 && (
-                      <div className="h-full flex flex-col items-center justify-center text-terminal-dim opacity-50">
-                         <Hash size={24} className="mb-2" />
-                         <span className="text-xs">NO ASSETS FOUND</span>
-                      </div>
-                    )}
-                    {userRooms.map(room => {
-                      return (
-                        <div key={room.id} className="bg-terminal-dark p-3 border border-terminal-dim/20 hover:border-terminal-green/50 transition-colors group">
-                          <div className="flex justify-between items-center mb-1">
-                             <span className="font-bold text-sm text-terminal-text truncate">{room.name}</span>
-                             <button onClick={() => setEditingRoomId(editingRoomId === room.id ? null : room.id)} className="text-terminal-dim hover:text-terminal-green">
-                               {editingRoomId === room.id ? <X size={14}/> : <Edit2 size={14} />}
-                             </button>
-                          </div>
-                          <div className="text-[10px] text-terminal-dim font-mono mb-2">ID: {room.id}</div>
-                          
-                          {editingRoomId === room.id ? (
-                             <div className="flex gap-1 animate-in fade-in">
-                               <input 
-                                 value={editRoomKeyInput}
-                                 onChange={e => setEditRoomKeyInput(e.target.value)}
-                                 className="flex-1 bg-terminal-gray text-[10px] px-2 py-1 border border-terminal-green/30"
-                                 placeholder="NEW KEY"
-                               />
-                               <button onClick={() => handleUpdateRoomKey(room.id)} className="bg-terminal-green text-black px-2 py-0.5 text-[10px] font-bold">SAVE</button>
-                             </div>
-                          ) : (
-                             <div className="flex items-center gap-2 text-[10px] bg-terminal-gray/50 p-1 px-2 rounded w-fit">
-                               <Key size={10} className="text-terminal-green"/>
-                               <span className="select-all font-bold">{room.key}</span>
-                             </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                 </div>
-              </div>
-
-              {/* Logs */}
-              <div className="border border-terminal-green/30 bg-black p-4 flex flex-col h-64 font-mono text-xs">
-                 <h3 className="text-terminal-green mb-2 flex items-center gap-2">
-                    <Terminal size={12} /> SYSTEM_LOGS
-                 </h3>
-                 <div className="flex-1 overflow-y-auto space-y-1 text-terminal-dim/80 pr-1">
-                    {user.activityLogs.slice().reverse().map((log, i) => (
-                      <div key={i} className="flex gap-2">
-                         <span className="text-terminal-dim">[{new Date(log.timestamp).toLocaleTimeString([], {hour12:false})}]</span>
-                         <span className={log.action === 'LOGIN' ? 'text-terminal-green' : 'text-terminal-text'}>
-                           {log.action}_OK
-                         </span>
-                      </div>
-                    ))}
-                    <div className="text-terminal-green animate-pulse">_</div>
-                 </div>
-              </div>
-           </div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderChat = (isPublic: boolean) => {
-    const messages = isPublic ? publicMessages : privateMessages;
-    const title = isPublic ? "PUBLIC CHANNEL" : activeRoom?.name || "UNKNOWN ROOM";
-
-    return (
-      <div className="flex flex-col h-full w-full max-w-5xl mx-auto shadow-2xl overflow-hidden bg-terminal-bg border-x border-terminal-dim/20">
-        <header className="bg-terminal-gray/50 border-b border-terminal-green/30 p-4 flex justify-between items-center backdrop-blur-sm sticky top-0 z-10">
-           <div className="flex items-center gap-4">
-             <button onClick={() => setView(ViewState.DASHBOARD)} className="text-terminal-dim hover:text-terminal-green transition-colors">
-               <ArrowRight size={20} className="rotate-180" />
-             </button>
-             <div>
-               <h2 className="font-bold text-lg flex items-center gap-2 text-terminal-green tracking-wide">
-                 {isPublic ? <Globe size={18} /> : <Lock size={18} />}
-                 {title.toUpperCase()}
-               </h2>
-               {!isPublic && activeRoom && (
-                 <div className="flex items-center gap-4 text-xs text-terminal-dim mt-1">
-                   <span className="flex items-center gap-1">ID: <span className="text-terminal-text font-mono select-all">{activeRoom.id}</span></span>
-                   <button onClick={copyRoomInfo} className="text-terminal-green hover:underline flex items-center gap-1 ml-2">
-                     {copied ? <Check size={12} /> : <Copy size={12} />} {copied ? 'COPIED' : 'COPY KEY'}
-                   </button>
-                 </div>
-               )}
-             </div>
-           </div>
-           <div className="flex items-center gap-3">
-             <div className="h-2 w-2 rounded-full bg-terminal-green animate-blink"></div>
-             <span className="text-xs text-terminal-green font-mono">LIVE_FEED</span>
-           </div>
-        </header>
-
-        <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 font-mono scroll-smooth">
-          {messages.map((msg) => (
-            <div 
-              key={msg.id} 
-              className={`flex flex-col animate-in slide-in-from-bottom-2 duration-300 group hover:bg-terminal-gray/20 p-2 rounded relative transition-colors ${msg.senderId === user?.id ? 'items-end' : 'items-start'}`}
-            >
-              <div className="flex items-center gap-2 mb-1">
-                <span className={`text-xs font-bold ${msg.isSystem ? 'text-terminal-alert' : (msg.isAi ? 'text-blue-400' : (msg.senderId === user?.id ? 'text-terminal-green' : 'text-orange-400'))}`}>
-                  {msg.isSystem ? 'SYSTEM' : (msg.senderId === user?.id ? 'YOU' : msg.senderId)}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4" ref={scrollRef}>
+        {messages.map((msg) => (
+          <div key={msg.id} className={`flex flex-col ${msg.user_id === user?.id ? 'items-end' : 'items-start'}`}>
+             <div className="flex items-center gap-2 mb-1">
+                <span className={`text-[10px] font-bold ${msg.is_ai ? 'text-blue-400' : (msg.user_id === user?.id ? 'text-terminal-green' : 'text-orange-400')}`}>
+                  {msg.is_ai ? 'AI_CORE' : (msg.user_id === user?.id ? 'YOU' : msg.username)}
                 </span>
-                <span className="text-[10px] text-terminal-dim">{new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                
-                {/* Delete Action (Hover) */}
-                {!msg.isSystem && msg.senderId === user?.id && (
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); handleDeleteMessage(msg.id); }}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity text-terminal-alert hover:text-red-500 ml-2 p-1"
-                    title="Delete Message"
-                  >
-                    <Trash2 size={12} />
-                  </button>
+                {msg.user_id === user?.id && (
+                  <button onClick={() => handleDeleteMessage(msg.id, msg.user_id)} className="text-terminal-dim hover:text-red-500"><Trash2 size={10}/></button>
                 )}
-              </div>
-
-              <div 
-                onClick={() => handleCopyMessage(msg.content, msg.id)}
-                onDoubleClick={(e) => {
-                  e.stopPropagation();
-                  handleDeleteRequest(msg);
-                }}
-                title={msg.senderId === user?.id ? "Click to Copy | Double-Click to Delete" : "Click to Copy"}
-                className={`max-w-[85%] px-3 py-2 rounded text-sm whitespace-pre-wrap break-words border cursor-pointer select-none active:scale-[0.99] transition-all hover:brightness-110 hover:shadow-[0_0_10px_rgba(0,255,65,0.05)] ${
-                msg.isSystem 
-                  ? 'border-terminal-alert/30 bg-terminal-alert/5 text-terminal-alert' 
-                  : (msg.senderId === user?.id 
-                      ? 'bg-terminal-green/10 border-terminal-green/30 text-terminal-text ml-auto' 
-                      : 'bg-terminal-gray/40 border-terminal-dim/20 text-terminal-text mr-auto')
-                }`}
-              >
-                {msg.content}
-                {copyFeedbackId === msg.id && (
-                  <div className="absolute -top-6 right-0 bg-terminal-green text-black text-[10px] px-2 py-1 rounded font-bold animate-in fade-in zoom-in duration-200">
-                    COPIED
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-          {isAiThinking && (
-             <div className="flex items-start gap-2 animate-pulse px-2">
-                <span className="text-blue-400 text-xs font-bold">AI_CORE</span>
-                <div className="bg-blue-400/10 border border-blue-400/30 px-3 py-2 rounded text-sm text-blue-300 flex items-center">
-                  <Loader2 size={14} className="animate-spin mr-2"/>
-                  PROCESSING...
-                </div>
              </div>
-          )}
-        </div>
-
-        <form onSubmit={handleSendMessage} className="p-4 bg-terminal-gray/50 border-t border-terminal-green/30 backdrop-blur-sm">
-          <div className="flex gap-2 relative">
-             <input 
-               type="text" 
-               value={messageInput}
-               onChange={e => setMessageInput(e.target.value)}
-               placeholder={isPublic ? "SEND TO PUBLIC CHANNEL (USE /ai FOR ASSISTANT)" : "SEND ENCRYPTED MESSAGE"}
-               className="flex-1 bg-terminal-dark border border-terminal-dim/30 px-4 py-3 focus:outline-none focus:border-terminal-green text-terminal-text placeholder-terminal-dim/40 font-mono text-sm"
-               autoFocus
-             />
-             <button type="submit" className="bg-terminal-green text-terminal-dark font-bold px-6 hover:bg-opacity-90 transition-opacity flex items-center gap-2 text-sm">
-                SEND <Send size={16} />
-             </button>
+             <div 
+               onClick={() => copyToClipboard(msg.content)}
+               onDoubleClick={() => handleDeleteMessage(msg.id, msg.user_id)}
+               className={`px-3 py-2 rounded text-sm max-w-[85%] border cursor-pointer ${
+                 msg.is_ai 
+                 ? 'border-blue-500/30 bg-blue-900/10 text-blue-100' 
+                 : (msg.user_id === user?.id ? 'border-terminal-green/30 bg-terminal-green/10 text-white' : 'border-terminal-dim/30 bg-terminal-gray/20 text-gray-200')
+               }`}
+             >
+               {msg.content}
+             </div>
           </div>
-        </form>
+        ))}
+        {isAiThinking && (
+          <div className="flex items-center gap-2 text-blue-400 text-xs px-2">
+             <Loader2 size={12} className="animate-spin"/> AI PROCESSING...
+          </div>
+        )}
       </div>
-    );
-  };
 
-  return (
-    <div className="h-screen w-screen bg-terminal-bg text-terminal-text font-sans selection:bg-terminal-green selection:text-terminal-dark overflow-hidden flex flex-col relative">
-       {/* Background Grid */}
-       <div className="absolute inset-0 bg-[linear-gradient(rgba(18,18,18,0.9)_1px,transparent_1px),linear-gradient(90deg,rgba(18,18,18,0.9)_1px,transparent_1px)] bg-[size:40px_40px] pointer-events-none z-0 opacity-20"></div>
-       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(0,255,65,0.03),transparent_70%)] pointer-events-none z-0"></div>
-       
-       <div className="relative z-10 h-full w-full">
-         {view === ViewState.AUTH && renderAuth()}
-         {view === ViewState.DASHBOARD && renderDashboard()}
-         {view === ViewState.PROFILE && renderProfile()}
-         {view === ViewState.PUBLIC_CHAT && renderChat(true)}
-         {view === ViewState.PRIVATE_ROOM && renderChat(false)}
-       </div>
+      <form onSubmit={handleSendMessage} className="p-4 border-t border-terminal-green/30 bg-terminal-gray/10">
+        <div className="flex gap-2">
+           <input 
+             value={messageInput}
+             onChange={e => setMessageInput(e.target.value)}
+             className="flex-1 bg-terminal-dark border border-terminal-dim/30 px-4 py-2 text-white outline-none focus:border-terminal-green font-mono"
+             placeholder={isPublic ? "Message public channel..." : "Message secure room..."}
+             autoFocus
+           />
+           <button type="submit" className="bg-terminal-green text-black px-4 py-2 font-bold hover:bg-opacity-90"><Send size={18}/></button>
+        </div>
+      </form>
     </div>
   );
 };

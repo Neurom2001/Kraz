@@ -6,10 +6,12 @@ let rooms: Room[] = [];
 let allMessages: Message[] = [
   {
     id: 'sys-1',
-    senderId: 'SYSTEM',
+    user_id: 'SYSTEM',
+    username: 'SYSTEM',
     content: 'SYSTEM INITIALIZED. PUBLIC CHANNEL OPEN.',
-    timestamp: Date.now(),
-    isSystem: true
+    created_at: new Date().toISOString(),
+    isSystem: true,
+    room_id: null
   }
 ];
 
@@ -33,6 +35,7 @@ export const AuthService = {
     }
     const newUser: User = { 
       id: userId, 
+      username: userId,
       password, // In a real app, hash this!
       isOnline: true,
       activityLogs: [{ timestamp: Date.now(), action: 'REGISTER' }]
@@ -88,9 +91,9 @@ export const RoomService = {
     const newRoom: Room = {
       id: `RM-${generateId().substring(0, 6)}`,
       key: generateKey(), // Secure access key
-      creatorId,
+      creator_id: creatorId,
       name,
-      createdAt: Date.now()
+      created_at: new Date().toISOString()
     };
     rooms.push(newRoom);
     return newRoom;
@@ -101,13 +104,13 @@ export const RoomService = {
   },
 
   getUserRooms: (userId: string): Room[] => {
-    return rooms.filter(r => r.creatorId === userId);
+    return rooms.filter(r => r.creator_id === userId);
   },
 
   updateRoomKey: (roomId: string, userId: string, newKey: string): Room => {
     const room = rooms.find(r => r.id === roomId);
     if (!room) throw new Error("ROOM_NOT_FOUND");
-    if (room.creatorId !== userId) throw new Error("UNAUTHORIZED");
+    if (room.creator_id !== userId) throw new Error("UNAUTHORIZED");
     
     room.key = newKey;
     return room;
@@ -120,9 +123,9 @@ export const RoomService = {
 };
 
 export const ChatService = {
-  getPublicMessages: () => allMessages.filter(m => !m.roomId),
+  getPublicMessages: () => allMessages.filter(m => !m.room_id),
   
-  getRoomMessages: (roomId: string) => allMessages.filter(m => m.roomId === roomId),
+  getRoomMessages: (roomId: string) => allMessages.filter(m => m.room_id === roomId),
   
   subscribe: (callback: Listener) => {
     listeners.push(callback);
@@ -134,17 +137,19 @@ export const ChatService = {
 
   sendPublicMessage: (sender: User | string, content: string, isAi = false) => {
     const senderId = typeof sender === 'string' ? sender : sender.id;
+    const username = typeof sender === 'string' ? sender : (sender.username || sender.id);
     const senderAvatar = typeof sender === 'string' ? undefined : sender.avatar;
 
     const msg: Message = {
       id: generateId(),
-      senderId,
+      user_id: senderId,
+      username,
       senderAvatar,
       content,
-      timestamp: Date.now(),
-      isAi,
+      created_at: new Date().toISOString(),
+      is_ai: isAi,
       isSystem: false,
-      roomId: undefined
+      room_id: null
     };
     allMessages.push(msg);
     notifyListeners({ type: 'NEW_MESSAGE', message: msg });
@@ -154,11 +159,12 @@ export const ChatService = {
   sendPrivateMessage: (sender: User, content: string, roomId: string) => {
     const msg: Message = {
       id: generateId(),
-      senderId: sender.id,
+      user_id: sender.id,
+      username: sender.username || sender.id,
       senderAvatar: sender.avatar,
       content,
-      timestamp: Date.now(),
-      roomId,
+      created_at: new Date().toISOString(),
+      room_id: roomId,
       isSystem: false
     };
     allMessages.push(msg);
@@ -171,12 +177,12 @@ export const ChatService = {
     if (index === -1) return;
     
     const msg = allMessages[index];
-    if (msg.senderId !== userId) throw new Error("UNAUTHORIZED_DELETE");
+    if (msg.user_id !== userId) throw new Error("UNAUTHORIZED_DELETE");
 
     // Remove from storage
     allMessages.splice(index, 1);
     
     // Notify clients
-    notifyListeners({ type: 'DELETE_MESSAGE', messageId, roomId: msg.roomId });
+    notifyListeners({ type: 'DELETE_MESSAGE', messageId, roomId: msg.room_id });
   }
 };

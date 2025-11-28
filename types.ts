@@ -1,5 +1,5 @@
 export interface UserProfile {
-  id: string; // UUID from Supabase Auth
+  id: string;
   username: string;
   email?: string;
 }
@@ -7,16 +7,18 @@ export interface UserProfile {
 export interface Message {
   id: string;
   content: string;
-  user_id: string; // Sender UUID
-  username: string; // Display name
-  room_id: string | null; // null = public chat
+  user_id: string;
+  username: string;
+  room_id: string | null;
   created_at: string;
   is_ai?: boolean;
+  isSystem?: boolean;
+  senderAvatar?: string;
 }
 
 export interface Room {
-  id: string; // Room Code (e.g., RM-123)
-  key: string; // Secret Key
+  id: string;
+  key: string;
   name: string;
   creator_id: string;
   created_at?: string;
@@ -28,10 +30,22 @@ export enum ViewState {
   PUBLIC_CHAT = 'PUBLIC_CHAT',
   PRIVATE_ROOM = 'PRIVATE_ROOM',
   PROFILE = 'PROFILE'
-}export enum ViewState {
-  AUTH = 'AUTH',
-  DASHBOARD = 'DASHBOARD',
-  PUBLIC_CHAT = 'PUBLIC_CHAT',
-  PRIVATE_ROOM = 'PRIVATE_ROOM',
-  PROFILE = 'PROFILE'
 }
+
+export interface ActivityLog {
+  timestamp: number;
+  action: string;
+}
+
+export interface User {
+  id: string;
+  password?: string;
+  isOnline?: boolean;
+  activityLogs: ActivityLog[];
+  avatar?: string;
+  username?: string;
+}
+
+export type ChatEvent = 
+  | { type: 'NEW_MESSAGE'; message: Message }
+  | { type: 'DELETE_MESSAGE'; messageId: string; roomId?: string | null };
