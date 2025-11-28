@@ -1,0 +1,5 @@
+{
+  "name": "MonoChat - Secure Terminal",
+  "description": "A terminal-styled secure messaging application featuring a global public channel and encrypted-style private rooms. Built with React, Tailwind, and Gemini AI integration.",
+  "requestFramePermissions": []
+}
