@@ -1,4 +1,4 @@
-import { Room, Message, User, ActivityLog, ChatEvent } from '../types';
+import { Room, Message, User, ChatEvent } from '../types';
 
 // In-memory storage simulation
 let users: User[] = [];

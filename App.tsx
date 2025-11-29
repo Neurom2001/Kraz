@@ -2,9 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ViewState, UserProfile, Room, Message } from './types';
 import { supabase } from './services/supabaseClient';
 import { 
-  Send, Lock, Globe, Terminal, LogOut, Key, Hash, 
+  Send, Lock, Globe, Terminal, LogOut, Hash, 
   User as UserIcon, Loader2, ArrowRight, 
-  Plus, MessageSquare, Trash2, Eye, EyeOff, AlertTriangle, Clock
+  Plus, MessageSquare, Trash2, Eye, EyeOff, AlertTriangle
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -60,7 +60,8 @@ const App: React.FC = () => {
   }, []);
 
   const fetchUserProfile = async (userId: string) => {
-    const { data, error } = await supabase
+    // Removed unused 'error' variable
+    const { data } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', userId)
