@@ -12,13 +12,13 @@ const Logo = ({ className }: { className?: string }) => {
   const [error, setError] = useState(false);
 
   if (error) {
-    // Fallback if /logo.png is missing or broken
+    // Fallback if /logo.svg is missing or broken
     return <MessageSquare className={`${className} text-terminal-green`} />;
   }
 
   return (
     <img 
-      src="/logo.png" 
+      src="/logo.svg" 
       alt="Chat Logo" 
       className={`${className} object-contain`}
       onError={() => setError(true)} 
