@@ -181,7 +181,9 @@ const App: React.FC = () => {
 
   const handleLogout = async () => {
     try {
-      await supabase.auth.signOut();
+      // scope: 'local' ensures the session is removed from the browser immediately
+      // even if the server request fails or hangs.
+      await supabase.auth.signOut({ scope: 'local' });
       showToast("LOGGED OUT SUCCESSFULLY", 'info');
     } catch (error) {
       console.error("Error signing out:", error);
