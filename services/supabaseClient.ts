@@ -1,10 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Safe access for import.meta.env to prevent "Cannot read properties of undefined"
-// We use 'any' casting to bypass strict TypeScript checks that might conflict with the build environment
-const getEnvVar = (key: string) => {
+// Safe access for import.meta.env
+// The vite-env.d.ts file should handle types, but we use a fallback to be safe at runtime
+const getEnvVar = (key: string): string => {
   try {
-    return (import.meta as any).env?.[key] || '';
+    return import.meta.env[key] || '';
   } catch (e) {
     console.warn(`Error accessing environment variable ${key}`, e);
     return '';
@@ -18,7 +18,7 @@ if (!supabaseUrl || !supabaseKey) {
   console.warn("Supabase credentials missing! Check Vercel Environment Variables or .env file.");
 }
 
-// Initialize client with fallbacks to prevent immediate crash, though requests will fail if keys are missing
+// Initialize client with fallbacks to prevent immediate crash
 export const supabase = createClient(
   supabaseUrl || 'https://placeholder.supabase.co', 
   supabaseKey || 'placeholder'
