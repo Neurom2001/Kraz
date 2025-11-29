@@ -419,7 +419,7 @@ const App: React.FC = () => {
                     value={passwordInput} 
                     onChange={e => setPasswordInput(e.target.value)} 
                     className={`w-full bg-terminal-dark border p-3 text-terminal-text outline-none focus:border-opacity-100 pr-10 transition-colors ${isRegistering ? 'border-yellow-600/30 focus:border-yellow-500' : 'border-terminal-green/30 focus:border-terminal-green'}`}
-                    placeholder="******" 
+                    placeholder={isRegistering ? "Min 6 characters" : "******"}
                     required
                   />
                   <button 
@@ -432,17 +432,6 @@ const App: React.FC = () => {
                 </div>
               </div>
 
-              {/* Warning Message for Registration */}
-              {isRegistering && (
-                <div className="flex items-start gap-3 bg-yellow-950/40 border border-yellow-600/40 p-3 text-xs text-yellow-500 rounded">
-                  <AlertTriangle size={20} className="shrink-0" />
-                  <div>
-                    <span className="font-bold block mb-1 text-sm">IMPORTANT WARNING</span>
-                    Passwords cannot be recovered if lost. Please memorize your credentials or save them in a secure location.
-                  </div>
-                </div>
-              )}
-              
               <button 
                 disabled={loading} 
                 className={`w-full font-bold py-3 hover:bg-opacity-90 flex justify-center transition-colors ${
@@ -453,6 +442,10 @@ const App: React.FC = () => {
               </button>
             </form>
           </div>
+          
+          <footer className="mt-8 text-[10px] text-terminal-dim font-mono">
+            &copy; {new Date().getFullYear()} Chat. All rights reserved.
+          </footer>
         </div>
       )}
 
@@ -525,6 +518,10 @@ const App: React.FC = () => {
                     {userRooms.length === 0 && <p className="text-terminal-dim text-xs">No active rooms.</p>}
                   </div>
                </div>
+
+               <footer className="mt-12 py-6 text-center text-[10px] text-terminal-dim border-t border-terminal-dim/10">
+                  &copy; {new Date().getFullYear()} Chat. All rights reserved.
+               </footer>
             </div>
           </div>
         </div>
