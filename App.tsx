@@ -7,6 +7,25 @@ import {
   Plus, MessageSquare, Trash2, Eye, EyeOff, AlertTriangle
 } from 'lucide-react';
 
+// Internal Logo Component with Fallback
+const Logo = ({ className }: { className?: string }) => {
+  const [error, setError] = useState(false);
+
+  if (error) {
+    // Fallback if /logo.png is missing or broken
+    return <MessageSquare className={`${className} text-terminal-green`} />;
+  }
+
+  return (
+    <img 
+      src="/logo.png" 
+      alt="Chat Logo" 
+      className={`${className} object-contain`}
+      onError={() => setError(true)} 
+    />
+  );
+};
+
 const App: React.FC = () => {
   // View State
   const [view, setView] = useState<ViewState>(ViewState.AUTH);
@@ -352,15 +371,7 @@ const App: React.FC = () => {
             
             <div className="mb-8 text-center">
               <div className="flex items-center justify-center gap-4 mb-2">
-                <img 
-                  src="/logo.png" 
-                  alt="Chat Logo" 
-                  className="h-16 w-auto object-contain"
-                  onError={(e) => {
-                    // Fallback in case image is missing during dev
-                    e.currentTarget.style.display = 'none'; 
-                  }} 
-                />
+                <Logo className="h-16 w-16" />
                 <h1 className={`text-4xl font-bold tracking-[0.2em] ${isRegistering ? 'text-yellow-500' : 'text-terminal-green'}`}>
                   CHAT
                 </h1>
@@ -446,23 +457,22 @@ const App: React.FC = () => {
       {view === ViewState.DASHBOARD && (
         <div className="flex-1 overflow-auto p-4">
           <div className="max-w-4xl mx-auto">
-            {/* UPDATED DASHBOARD HEADER */}
+            {/* UPDATED DASHBOARD HEADER: LOGO + BRAND NAME */}
             <header className="flex justify-between items-center py-6 border-b border-terminal-green/20 mb-8">
               <div className="flex items-center gap-4">
-                <img 
-                  src="/logo.png" 
-                  alt="Chat Logo" 
-                  className="h-10 w-auto object-contain"
-                  onError={(e) => { e.currentTarget.style.display = 'none'; }} 
-                />
-                <div>
-                  <h1 className="text-xl font-bold tracking-wider text-terminal-green">CHAT</h1>
-                  <p className="text-[10px] text-terminal-dim">USER: <span className="text-terminal-text">{user?.username}</span></p>
+                <Logo className="h-10 w-10" />
+                <div className="flex flex-col">
+                  <h1 className="text-2xl font-bold tracking-wider text-terminal-green leading-none">CHAT</h1>
+                  <span className="text-[10px] text-terminal-dim font-mono tracking-widest uppercase">connect easier to everywhere</span>
                 </div>
               </div>
-              <button onClick={handleLogout} className="text-terminal-alert border border-terminal-alert/30 px-3 py-1 text-sm hover:bg-terminal-alert/10 flex items-center gap-2">
-                <LogOut size={14} /> LOGOUT
-              </button>
+              
+              <div className="flex items-center gap-4">
+                <span className="hidden sm:inline-block text-[10px] text-terminal-dim border border-terminal-dim/30 px-2 py-1 rounded">USER: {user?.username}</span>
+                <button onClick={handleLogout} className="text-terminal-alert border border-terminal-alert/30 px-3 py-1 text-sm hover:bg-terminal-alert/10 flex items-center gap-2 transition-colors">
+                  <LogOut size={14} /> <span className="hidden sm:inline">LOGOUT</span>
+                </button>
+              </div>
             </header>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
