@@ -3,7 +3,7 @@ import { ViewState, UserProfile, Room, Message } from './types';
 import { supabase } from './services/supabaseClient';
 import { 
   Send, Lock, Globe, LogOut, Hash, 
-  User as UserIcon, Loader2, ArrowRight, 
+  Loader2, ArrowRight, 
   Plus, MessageSquare, Trash2, Eye, EyeOff, AlertTriangle
 } from 'lucide-react';
 
