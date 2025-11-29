@@ -328,20 +328,20 @@ const App: React.FC = () => {
   return (
     <div className="flex flex-col h-screen bg-terminal-bg text-terminal-text relative">
       
-      {/* GLOBAL TOAST NOTIFICATION */}
+      {/* GLOBAL TOAST NOTIFICATION - TOP RIGHT */}
       {toast && (
-        <div className="fixed inset-0 pointer-events-none flex items-center justify-center z-50 animate-in fade-in zoom-in duration-200">
-          <div className={`pointer-events-auto max-w-sm w-full mx-4 p-6 border shadow-[0_0_50px_rgba(0,0,0,0.8)] backdrop-blur-sm text-center font-bold tracking-widest text-lg ${
+        <div className="fixed top-6 right-6 z-50 pointer-events-none animate-in slide-in-from-right-10 fade-in duration-300">
+          <div className={`pointer-events-auto min-w-[250px] max-w-sm px-5 py-4 border shadow-[0_0_20px_rgba(0,0,0,0.5)] backdrop-blur-md text-center font-bold tracking-widest text-sm ${
             toast.type === 'success' ? 'bg-terminal-green/10 border-terminal-green text-terminal-green' :
             toast.type === 'error' ? 'bg-red-900/40 border-terminal-alert text-terminal-alert' :
             'bg-terminal-gray/90 border-terminal-dim text-white'
           }`}>
-            <div className="mb-2 flex justify-center">
-              {toast.type === 'success' ? <div className="w-3 h-3 bg-terminal-green rounded-full animate-pulse"/> : 
-               toast.type === 'error' ? <AlertTriangle size={32} /> : 
-               <div className="w-3 h-3 bg-white rounded-full animate-pulse"/>}
+            <div className="flex items-center gap-3">
+              {toast.type === 'success' ? <div className="w-2 h-2 bg-terminal-green rounded-full animate-pulse"/> : 
+               toast.type === 'error' ? <AlertTriangle size={16} /> : 
+               <div className="w-2 h-2 bg-white rounded-full animate-pulse"/>}
+              <span>{toast.msg}</span>
             </div>
-            {toast.msg}
           </div>
         </div>
       )}
@@ -349,7 +349,7 @@ const App: React.FC = () => {
       {view === ViewState.AUTH && (
         <div className="flex flex-col items-center justify-center flex-1 p-4">
           <div className={`w-full max-w-md border p-8 shadow-[0_0_20px_rgba(0,0,0,0.5)] transition-colors duration-300 ${isRegistering ? 'border-yellow-600 bg-yellow-900/10' : 'border-terminal-green/50 bg-terminal-gray/10'}`}>
-            <div className="flex justify-center mb-6">
+            <div className="flex justify-center mb-4">
               {isRegistering ? (
                  <UserIcon size={48} className="text-yellow-500 animate-pulse" />
               ) : (
@@ -357,9 +357,14 @@ const App: React.FC = () => {
               )}
             </div>
             
-            <h1 className={`text-2xl font-bold mb-6 text-center tracking-widest ${isRegistering ? 'text-yellow-500' : 'text-terminal-green'}`}>
-              {isRegistering ? 'USER REGISTRATION' : 'SECURE TERMINAL'}
-            </h1>
+            <div className="text-center mb-8">
+              <h1 className={`text-4xl font-bold tracking-[0.2em] mb-2 ${isRegistering ? 'text-yellow-500' : 'text-terminal-green'}`}>
+                CHAT
+              </h1>
+              <p className={`text-xs tracking-wider font-mono ${isRegistering ? 'text-yellow-500/70' : 'text-terminal-green/70'}`}>
+                connect easier to everywhere
+              </p>
+            </div>
             
             <div className="flex gap-4 mb-8 text-sm justify-center border-b border-gray-800 pb-1">
                <button 
