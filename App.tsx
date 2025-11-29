@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ViewState, UserProfile, Room, Message } from './types';
 import { supabase } from './services/supabaseClient';
-import { getGeminiResponse } from './services/geminiService';
 import { 
   Send, Lock, Globe, Terminal, LogOut, Key, Hash, 
-  User as UserIcon, Loader2, Copy, Check, ArrowRight, 
-  Plus, MessageSquare, Trash2, Settings, Shield, X
+  User as UserIcon, Loader2, ArrowRight, 
+  Plus, MessageSquare, Trash2
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -32,7 +31,6 @@ const App: React.FC = () => {
   const [joinRoomKey, setJoinRoomKey] = useState('');
   const [joinError, setJoinError] = useState('');
 
-  const [isAiThinking, setIsAiThinking] = useState(false);
   const [copied, setCopied] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -173,7 +171,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages, isAiThinking]);
+  }, [messages]);
 
   // --- 3. Actions ---
 
@@ -192,22 +190,6 @@ const App: React.FC = () => {
     }]);
 
     if (error) console.error("Send failed:", error);
-
-    // AI Handler
-    if (view === ViewState.PUBLIC_CHAT && content.toLowerCase().startsWith('/ai')) {
-      setIsAiThinking(true);
-      const prompt = content.replace('/ai', '').trim();
-      const aiResponse = await getGeminiResponse(prompt);
-      
-      await supabase.from('messages').insert([{
-        content: aiResponse,
-        user_id: '00000000-0000-0000-0000-000000000000', // Fake ID for AI
-        username: 'AI_CORE',
-        is_ai: true,
-        room_id: null
-      }]);
-      setIsAiThinking(false);
-    }
   };
 
   const handleDeleteMessage = async (msgId: string, senderId: string) => {
@@ -346,7 +328,7 @@ const App: React.FC = () => {
                 <MessageSquare className="text-terminal-green" size={24} />
                 <h3 className="text-lg font-bold">PUBLIC CHANNEL</h3>
               </div>
-              <p className="text-terminal-dim text-sm z-10">Global access point. AI enabled.</p>
+              <p className="text-terminal-dim text-sm z-10">Global access point.</p>
             </button>
 
             <div className="space-y-6">
@@ -444,11 +426,6 @@ const App: React.FC = () => {
              </div>
           </div>
         ))}
-        {isAiThinking && (
-          <div className="flex items-center gap-2 text-blue-400 text-xs px-2">
-             <Loader2 size={12} className="animate-spin"/> AI PROCESSING...
-          </div>
-        )}
       </div>
 
       <form onSubmit={handleSendMessage} className="p-4 border-t border-terminal-green/30 bg-terminal-gray/10">
