@@ -4,7 +4,7 @@ import { supabase } from './services/supabaseClient';
 import { 
   Send, Lock, Globe, Terminal, LogOut, Key, Hash, 
   User as UserIcon, Loader2, ArrowRight, 
-  Plus, MessageSquare, Trash2, Eye, EyeOff, AlertTriangle
+  Plus, MessageSquare, Trash2, Eye, EyeOff, AlertTriangle, Clock
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -18,10 +18,9 @@ const App: React.FC = () => {
   const [userRooms, setUserRooms] = useState<Room[]>([]);
   
   // Inputs
-  // Removed emailInput state as we use username for auth now
   const [passwordInput, setPasswordInput] = useState('');
   const [usernameInput, setUsernameInput] = useState('');
-  const [showPassword, setShowPassword] = useState(false); // Toggle for password visibility
+  const [showPassword, setShowPassword] = useState(false);
 
   const [isRegistering, setIsRegistering] = useState(false);
   const [authError, setAuthError] = useState('');
@@ -51,6 +50,7 @@ const App: React.FC = () => {
       if (session) {
         fetchUserProfile(session.user.id);
       } else {
+        // Session ended
         setUser(null);
         setView(ViewState.AUTH);
       }
@@ -71,10 +71,7 @@ const App: React.FC = () => {
       setView(ViewState.DASHBOARD);
       fetchUserRooms(userId);
     } else {
-      // Fallback: If profile missing, use the metadata or recreate partial profile
-      // In username-only mode, we might not have email easily accessible unless we store it
-      // but we can try to infer username from the login input if needed, 
-      // though fetching from DB is safer.
+      // Fallback for immediate UI update if profile fetch lags
       setUser({ id: userId, username: 'User' });
       setView(ViewState.DASHBOARD);
     }
@@ -85,8 +82,6 @@ const App: React.FC = () => {
     setAuthError('');
     setLoading(true);
 
-    // Supabase requires an email, so we generate a fake one based on the username.
-    // Example: user "mgmg" becomes "mgmg@monochat.local"
     const sanitizedUsername = usernameInput.trim().toLowerCase().replace(/\s+/g, '');
     const fakeEmail = `${sanitizedUsername}@monochat.local`;
 
@@ -111,12 +106,11 @@ const App: React.FC = () => {
             .from('profiles')
             .insert([{ id: authData.user.id, username: usernameInput.trim() }]);
           
-          if (profileError) {
-             console.error("Profile creation failed:", profileError);
-          }
+          if (profileError) console.error("Profile creation failed:", profileError);
+          
           alert("REGISTRATION SUCCESSFUL. PLEASE LOGIN.");
           setIsRegistering(false);
-          setPasswordInput(''); // Clear password for safety
+          setPasswordInput('');
         }
       } else {
         // Login
@@ -127,7 +121,6 @@ const App: React.FC = () => {
         if (error) throw error;
       }
     } catch (err: any) {
-      // Beautify error message
       let msg = err.message;
       if (msg.includes("Invalid login credentials")) msg = "INVALID USERNAME OR PASSWORD";
       if (msg.includes("User already registered")) msg = "USERNAME ALREADY TAKEN";
@@ -138,11 +131,18 @@ const App: React.FC = () => {
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-    setMessages([]);
-    setUsernameInput('');
-    setPasswordInput('');
+    try {
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error("Error signing out:", error);
+    } finally {
+      // Force local state reset regardless of API response
+      setUser(null);
+      setMessages([]);
+      setUsernameInput('');
+      setPasswordInput('');
+      setView(ViewState.AUTH);
+    }
   };
 
   // --- 2. Data Fetching & Realtime ---
@@ -171,12 +171,10 @@ const App: React.FC = () => {
     if (view === ViewState.PUBLIC_CHAT || view === ViewState.PRIVATE_ROOM) {
       fetchMessages();
 
-      // Realtime Subscription
       const channel = supabase
         .channel('realtime_messages')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
           const newMsg = payload.new as Message;
-          // Filter incoming messages based on current view
           if (view === ViewState.PUBLIC_CHAT && !newMsg.room_id) {
             setMessages(prev => [...prev, newMsg]);
           } else if (view === ViewState.PRIVATE_ROOM && activeRoom && newMsg.room_id === activeRoom.id) {
@@ -204,7 +202,6 @@ const App: React.FC = () => {
     const content = messageInput.trim();
     setMessageInput('');
 
-    // Insert into DB
     const { error } = await supabase.from('messages').insert([{
       content: content,
       user_id: user.id,
@@ -214,7 +211,6 @@ const App: React.FC = () => {
 
     if (error) {
       alert("SEND FAILED: " + error.message);
-      console.error("Send failed:", error);
     }
   };
 
@@ -229,7 +225,6 @@ const App: React.FC = () => {
     e.preventDefault();
     if (!user || !roomNameInput.trim()) return;
     
-    // Generate simple ID like RM-X9F
     const roomId = `RM-${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
     const roomKey = Math.random().toString(36).substr(2, 6).toUpperCase();
 
@@ -277,12 +272,18 @@ const App: React.FC = () => {
     setView(ViewState.PRIVATE_ROOM);
   };
 
-  // --- Render Helpers ---
-
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const formatTime = (dateStr: string) => {
+    try {
+      return new Date(dateStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return '';
+    }
   };
 
   // --- Views ---
@@ -290,66 +291,88 @@ const App: React.FC = () => {
   if (view === ViewState.AUTH) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-terminal-bg text-terminal-text">
-        <div className="w-full max-w-md border border-terminal-green/50 p-8 bg-terminal-gray/10 shadow-[0_0_15px_rgba(0,255,65,0.1)]">
+        <div className={`w-full max-w-md border p-8 shadow-[0_0_20px_rgba(0,0,0,0.5)] transition-colors duration-300 ${isRegistering ? 'border-yellow-600 bg-yellow-900/10' : 'border-terminal-green/50 bg-terminal-gray/10'}`}>
           <div className="flex justify-center mb-6">
-            <Terminal size={48} className="text-terminal-green animate-pulse" />
+            {isRegistering ? (
+               <UserIcon size={48} className="text-yellow-500 animate-pulse" />
+            ) : (
+               <Terminal size={48} className="text-terminal-green animate-pulse" />
+            )}
           </div>
-          <h1 className="text-2xl font-bold mb-6 text-center tracking-widest text-terminal-green">SECURE TERMINAL</h1>
           
-          <div className="flex gap-4 mb-6 text-sm justify-center">
-             <button onClick={() => { setIsRegistering(false); setAuthError(''); }} className={`pb-1 ${!isRegistering ? 'text-terminal-green border-b border-terminal-green' : 'text-terminal-dim'}`}>LOGIN</button>
-             <button onClick={() => { setIsRegistering(true); setAuthError(''); }} className={`pb-1 ${isRegistering ? 'text-terminal-green border-b border-terminal-green' : 'text-terminal-dim'}`}>REGISTER</button>
+          <h1 className={`text-2xl font-bold mb-6 text-center tracking-widest ${isRegistering ? 'text-yellow-500' : 'text-terminal-green'}`}>
+            {isRegistering ? 'USER REGISTRATION' : 'SECURE TERMINAL'}
+          </h1>
+          
+          <div className="flex gap-4 mb-8 text-sm justify-center border-b border-gray-800 pb-1">
+             <button 
+               onClick={() => { setIsRegistering(false); setAuthError(''); }} 
+               className={`px-4 py-2 transition-colors ${!isRegistering ? 'text-terminal-green border-b-2 border-terminal-green' : 'text-terminal-dim hover:text-gray-400'}`}
+             >
+               LOGIN
+             </button>
+             <button 
+               onClick={() => { setIsRegistering(true); setAuthError(''); }} 
+               className={`px-4 py-2 transition-colors ${isRegistering ? 'text-yellow-500 border-b-2 border-yellow-500' : 'text-terminal-dim hover:text-gray-400'}`}
+             >
+               REGISTER
+             </button>
           </div>
 
-          <form onSubmit={handleAuth} className="space-y-4">
+          <form onSubmit={handleAuth} className="space-y-6">
             <div>
-              <label className="text-xs text-terminal-dim block mb-1">USERNAME</label>
+              <label className={`text-xs block mb-1 font-bold ${isRegistering ? 'text-yellow-500/70' : 'text-terminal-green/70'}`}>USERNAME</label>
               <input 
                 type="text" 
                 value={usernameInput} 
                 onChange={e => setUsernameInput(e.target.value)} 
-                className="w-full bg-terminal-dark border border-terminal-green/30 p-2 text-terminal-text focus:border-terminal-green outline-none" 
+                className={`w-full bg-terminal-dark border p-3 text-terminal-text outline-none focus:border-opacity-100 transition-colors ${isRegistering ? 'border-yellow-600/30 focus:border-yellow-500' : 'border-terminal-green/30 focus:border-terminal-green'}`}
                 placeholder="Enter username" 
                 required
               />
             </div>
             
             <div>
-              <label className="text-xs text-terminal-dim block mb-1">PASSWORD</label>
+              <label className={`text-xs block mb-1 font-bold ${isRegistering ? 'text-yellow-500/70' : 'text-terminal-green/70'}`}>PASSWORD</label>
               <div className="relative">
                 <input 
                   type={showPassword ? "text" : "password"} 
                   value={passwordInput} 
                   onChange={e => setPasswordInput(e.target.value)} 
-                  className="w-full bg-terminal-dark border border-terminal-green/30 p-2 text-terminal-text focus:border-terminal-green outline-none pr-10" 
+                  className={`w-full bg-terminal-dark border p-3 text-terminal-text outline-none focus:border-opacity-100 pr-10 transition-colors ${isRegistering ? 'border-yellow-600/30 focus:border-yellow-500' : 'border-terminal-green/30 focus:border-terminal-green'}`}
                   placeholder="******" 
                   required
                 />
                 <button 
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-2 top-2 text-terminal-dim hover:text-terminal-green"
+                  className={`absolute right-3 top-3 hover:opacity-100 transition-opacity ${isRegistering ? 'text-yellow-500/70' : 'text-terminal-green/70'}`}
                 >
-                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
             </div>
 
             {/* Warning Message for Registration */}
             {isRegistering && (
-              <div className="flex items-start gap-2 bg-yellow-900/20 border border-yellow-700/50 p-3 text-xs text-yellow-500/90">
-                <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+              <div className="flex items-start gap-3 bg-yellow-950/40 border border-yellow-600/40 p-3 text-xs text-yellow-500 rounded">
+                <AlertTriangle size={20} className="shrink-0" />
                 <div>
-                  <span className="font-bold block mb-1">WARNING: NO ACCOUNT RECOVERY</span>
-                  System does not use email verification. If you lose your password, your account cannot be recovered. Please memorize your credentials.
+                  <span className="font-bold block mb-1 text-sm">IMPORTANT WARNING</span>
+                  Passwords cannot be recovered if lost. Please memorize your credentials or save them in a secure location.
                 </div>
               </div>
             )}
             
-            {authError && <div className="text-terminal-alert text-xs p-2 border border-terminal-alert/30">{authError}</div>}
+            {authError && <div className="text-terminal-alert text-xs p-3 border border-terminal-alert/30 bg-red-900/10 text-center font-bold tracking-wide">{authError}</div>}
             
-            <button disabled={loading} className="w-full bg-terminal-green text-black font-bold py-2 hover:bg-opacity-90 flex justify-center">
-              {loading ? <Loader2 className="animate-spin"/> : (isRegistering ? 'INITIALIZE USER' : 'AUTHENTICATE')}
+            <button 
+              disabled={loading} 
+              className={`w-full font-bold py-3 hover:bg-opacity-90 flex justify-center transition-colors ${
+                isRegistering ? 'bg-yellow-600 text-black' : 'bg-terminal-green text-black'
+              }`}
+            >
+              {loading ? <Loader2 className="animate-spin"/> : (isRegistering ? 'CREATE SECURE ID' : 'AUTHENTICATE ACCESS')}
             </button>
           </form>
         </div>
@@ -408,7 +431,6 @@ const App: React.FC = () => {
               </div>
             </div>
             
-            {/* My Rooms List */}
              <div className="md:col-span-2 border border-terminal-green/30 bg-terminal-gray/10 p-6">
                 <h3 className="font-bold text-terminal-text mb-4">MY ROOMS</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -430,7 +452,6 @@ const App: React.FC = () => {
     );
   }
 
-  // Chat View (Public or Private)
   const isPublic = view === ViewState.PUBLIC_CHAT;
   return (
     <div className="flex flex-col h-screen bg-terminal-bg text-terminal-text">
@@ -464,8 +485,11 @@ const App: React.FC = () => {
                 <span className={`text-[10px] font-bold ${msg.is_ai ? 'text-blue-400' : (msg.user_id === user?.id ? 'text-terminal-green' : 'text-orange-400')}`}>
                   {msg.is_ai ? 'AI_CORE' : (msg.user_id === user?.id ? 'YOU' : msg.username)}
                 </span>
+                <span className="text-[10px] text-terminal-dim flex items-center gap-1">
+                  {formatTime(msg.created_at)}
+                </span>
                 {msg.user_id === user?.id && (
-                  <button onClick={() => handleDeleteMessage(msg.id, msg.user_id)} className="text-terminal-dim hover:text-red-500"><Trash2 size={10}/></button>
+                  <button onClick={() => handleDeleteMessage(msg.id, msg.user_id)} className="text-terminal-dim hover:text-red-500 ml-1"><Trash2 size={10}/></button>
                 )}
              </div>
              <div 
