@@ -1,13 +1,12 @@
 import { GoogleGenAI } from "@google/genai";
 
-const apiKey = import.meta.env.VITE_API_KEY || '';
+// Use import.meta.env for Vite support (Replit/Vercel)
+const apiKey = (import.meta as any).env?.VITE_API_KEY || '';
 
 let ai: GoogleGenAI | null = null;
 
 if (apiKey) {
   ai = new GoogleGenAI({ apiKey });
-} else {
-  console.warn("Gemini API Key missing. AI features will not work.");
 }
 
 export const getGeminiResponse = async (userMessage: string): Promise<string> => {

@@ -434,10 +434,10 @@ const App: React.FC = () => {
              <div 
                onClick={() => copyToClipboard(msg.content)}
                onDoubleClick={() => handleDeleteMessage(msg.id, msg.user_id)}
-               className={`px-3 py-2 rounded text-sm max-w-[85%] border cursor-pointer ${
+               className={`px-3 py-2 rounded text-sm max-w-[85%] border cursor-pointer hover:bg-opacity-20 transition-colors ${
                  msg.is_ai 
                  ? 'border-blue-500/30 bg-blue-900/10 text-blue-100' 
-                 : (msg.user_id === user?.id ? 'border-terminal-green/30 bg-terminal-green/10 text-white' : 'border-terminal-dim/30 bg-terminal-gray/20 text-gray-200')
+                 : (msg.user_id === user?.id ? 'border-terminal-green/30 bg-terminal-green/10 text-white hover:bg-terminal-green/20' : 'border-terminal-dim/30 bg-terminal-gray/20 text-gray-200 hover:bg-terminal-gray/30')
                }`}
              >
                {msg.content}

@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@': resolve(__dirname, './'), // Maps '@' to the root directory
+      '@': resolve('./'), // Maps '@' to the root directory
     },
   },
   build: {
