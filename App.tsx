@@ -4,7 +4,7 @@ import { supabase } from './services/supabaseClient';
 import { 
   Send, Lock, Globe, LogOut, Hash, 
   Loader2, ArrowRight, 
-  Plus, MessageSquare, Trash2, Eye, EyeOff, AlertTriangle
+  Plus, MessageSquare, Trash2, Eye, EyeOff, AlertTriangle, XCircle, Shield
 } from 'lucide-react';
 
 // Internal Logo Component with Fallback
@@ -34,7 +34,10 @@ const App: React.FC = () => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [activeRoom, setActiveRoom] = useState<Room | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [userRooms, setUserRooms] = useState<Room[]>([]);
+  
+  // Room Lists
+  const [userRooms, setUserRooms] = useState<Room[]>([]); // Rooms created by user (DB)
+  const [savedRooms, setSavedRooms] = useState<Room[]>([]); // Rooms joined by user (Local Storage)
   
   // Inputs
   const [passwordInput, setPasswordInput] = useState('');
@@ -79,6 +82,16 @@ const App: React.FC = () => {
         fetchUserProfile(session.user.id);
       }
     });
+
+    // Load saved rooms from local storage
+    const storedRooms = localStorage.getItem('saved_rooms');
+    if (storedRooms) {
+      try {
+        setSavedRooms(JSON.parse(storedRooms));
+      } catch (e) {
+        console.error("Failed to parse saved rooms", e);
+      }
+    }
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -303,6 +316,24 @@ const App: React.FC = () => {
     }
   };
 
+  const handleDeleteRoom = async (roomId: string) => {
+    if (!window.confirm("ARE YOU SURE? This will permanently delete the room and all messages.")) return;
+
+    // 1. Delete messages first (safeguard against foreign key issues)
+    await supabase.from('messages').delete().eq('room_id', roomId);
+    
+    // 2. Delete room
+    const { error } = await supabase.from('rooms').delete().eq('id', roomId);
+    
+    if (error) {
+      showToast("FAILED TO DELETE ROOM", 'error');
+      console.error(error);
+    } else {
+      showToast("ROOM DELETED", 'success');
+      if (user) fetchUserRooms(user.id);
+    }
+  };
+
   const handleJoinRoom = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -317,11 +348,29 @@ const App: React.FC = () => {
     } else {
       if (data.key === joinRoomKey.trim()) {
         enterRoom(data);
+        
+        // Save to local storage
+        const isAlreadySaved = savedRooms.some(r => r.id === data.id);
+        if (!isAlreadySaved && data.creator_id !== user?.id) {
+          const newSaved = [...savedRooms, data];
+          setSavedRooms(newSaved);
+          localStorage.setItem('saved_rooms', JSON.stringify(newSaved));
+        }
+
         showToast("JOINED ROOM", 'success');
       } else {
         showToast('INVALID ACCESS KEY', 'error');
       }
     }
+  };
+
+  const handleLeaveRoom = (roomId: string) => {
+    if (!window.confirm("Remove this room from your saved list?")) return;
+    
+    const newSaved = savedRooms.filter(r => r.id !== roomId);
+    setSavedRooms(newSaved);
+    localStorage.setItem('saved_rooms', JSON.stringify(newSaved));
+    showToast("ROOM REMOVED", 'info');
   };
 
   const enterRoom = (room: Room) => {
@@ -504,19 +553,52 @@ const App: React.FC = () => {
               </div>
               
                <div className="md:col-span-2 border border-terminal-green/30 bg-terminal-gray/10 p-6">
-                  <h3 className="font-bold text-terminal-text mb-4">MY ROOMS</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Shield className="text-terminal-green" size={20}/>
+                    <h3 className="font-bold text-terminal-text">CREATED BY ME</h3>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
                     {userRooms.map(r => (
-                      <div key={r.id} className="bg-terminal-dark border border-terminal-dim/20 p-3 flex justify-between items-center">
+                      <div key={r.id} className="bg-terminal-dark border border-terminal-dim/20 p-3 flex justify-between items-center group relative">
                         <div>
                           <div className="font-bold text-sm">{r.name}</div>
                           <div className="text-[10px] text-terminal-dim font-mono">ID: {r.id} | KEY: {r.key}</div>
                         </div>
-                        <button onClick={() => enterRoom(r)} className="text-terminal-green text-xs hover:underline">ENTER &rarr;</button>
+                        <div className="flex items-center gap-2">
+                           <button onClick={() => handleDeleteRoom(r.id)} className="text-terminal-dim hover:text-red-500 p-2" title="Delete Room">
+                              <Trash2 size={16}/>
+                           </button>
+                           <button onClick={() => enterRoom(r)} className="text-terminal-green text-xs hover:underline bg-terminal-green/10 px-2 py-1 rounded">ENTER &rarr;</button>
+                        </div>
                       </div>
                     ))}
-                    {userRooms.length === 0 && <p className="text-terminal-dim text-xs">No active rooms.</p>}
+                    {userRooms.length === 0 && <p className="text-terminal-dim text-xs">No created rooms.</p>}
                   </div>
+
+                  {savedRooms.length > 0 && (
+                    <>
+                      <div className="flex items-center gap-2 mb-4 pt-4 border-t border-terminal-dim/20">
+                        <Hash className="text-blue-400" size={20}/>
+                        <h3 className="font-bold text-terminal-text">SAVED / JOINED</h3>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {savedRooms.map(r => (
+                          <div key={r.id} className="bg-terminal-dark border border-terminal-dim/20 p-3 flex justify-between items-center">
+                            <div>
+                              <div className="font-bold text-sm">{r.name}</div>
+                              <div className="text-[10px] text-terminal-dim font-mono">ID: {r.id}</div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                               <button onClick={() => handleLeaveRoom(r.id)} className="text-terminal-dim hover:text-orange-400 p-2" title="Leave Room">
+                                  <XCircle size={16}/>
+                               </button>
+                               <button onClick={() => enterRoom(r)} className="text-terminal-green text-xs hover:underline bg-terminal-green/10 px-2 py-1 rounded">ENTER &rarr;</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
                </div>
 
                <footer className="mt-12 py-6 text-center text-[10px] text-terminal-dim border-t border-terminal-dim/10">
