@@ -349,14 +349,22 @@ const App: React.FC = () => {
       {view === ViewState.AUTH && (
         <div className="flex flex-col items-center justify-center flex-1 p-4">
           <div className={`w-full max-w-md border p-8 shadow-[0_0_20px_rgba(0,0,0,0.5)] transition-colors duration-300 ${isRegistering ? 'border-yellow-600 bg-yellow-900/10' : 'border-terminal-green/50 bg-terminal-gray/10'}`}>
-            <div className="flex justify-center mb-6">
-              <img src="/logo.png" alt="Chat Logo" className="h-24 w-auto object-contain" />
-            </div>
             
-            <div className="text-center mb-8">
-              <h1 className={`text-4xl font-bold tracking-[0.2em] mb-2 ${isRegistering ? 'text-yellow-500' : 'text-terminal-green'}`}>
-                CHAT
-              </h1>
+            <div className="mb-8 text-center">
+              <div className="flex items-center justify-center gap-4 mb-2">
+                <img 
+                  src="/logo.png" 
+                  alt="Chat Logo" 
+                  className="h-16 w-auto object-contain"
+                  onError={(e) => {
+                    // Fallback in case image is missing during dev
+                    e.currentTarget.style.display = 'none'; 
+                  }} 
+                />
+                <h1 className={`text-4xl font-bold tracking-[0.2em] ${isRegistering ? 'text-yellow-500' : 'text-terminal-green'}`}>
+                  CHAT
+                </h1>
+              </div>
               <p className={`text-xs tracking-wider font-mono ${isRegistering ? 'text-yellow-500/70' : 'text-terminal-green/70'}`}>
                 connect easier to everywhere
               </p>
