@@ -4,7 +4,7 @@ import { supabase } from './services/supabaseClient';
 import { 
   Send, Lock, Globe, Terminal, LogOut, Hash, 
   User as UserIcon, Loader2, ArrowRight, 
-  Plus, MessageSquare, Trash2, Eye, EyeOff, AlertTriangle
+  Plus, MessageSquare, Trash2, Eye, EyeOff, AlertTriangle, CheckCircle
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -24,6 +24,7 @@ const App: React.FC = () => {
 
   const [isRegistering, setIsRegistering] = useState(false);
   const [authError, setAuthError] = useState('');
+  const [authSuccess, setAuthSuccess] = useState(''); // New state for success messages
   const [loading, setLoading] = useState(false);
 
   const [messageInput, setMessageInput] = useState('');
@@ -60,7 +61,6 @@ const App: React.FC = () => {
   }, []);
 
   const fetchUserProfile = async (userId: string) => {
-    // Removed unused 'error' variable
     const { data } = await supabase
       .from('profiles')
       .select('*')
@@ -81,6 +81,7 @@ const App: React.FC = () => {
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
+    setAuthSuccess('');
     setLoading(true);
 
     const sanitizedUsername = usernameInput.trim().toLowerCase().replace(/\s+/g, '');
@@ -109,9 +110,13 @@ const App: React.FC = () => {
           
           if (profileError) console.error("Profile creation failed:", profileError);
           
-          alert("REGISTRATION SUCCESSFUL. PLEASE LOGIN.");
-          setIsRegistering(false);
-          setPasswordInput('');
+          // 3. Force Manual Login Logic
+          // Even if Supabase auto-logs in, we sign out to force the user to memorize their password
+          await supabase.auth.signOut();
+          
+          setIsRegistering(false); // Switch to Login View
+          setPasswordInput(''); // Clear password field
+          setAuthSuccess("REGISTRATION SUCCESSFUL. PLEASE LOGIN."); // Show in-app success message
         }
       } else {
         // Login
@@ -142,6 +147,8 @@ const App: React.FC = () => {
       setMessages([]);
       setUsernameInput('');
       setPasswordInput('');
+      setAuthSuccess('');
+      setAuthError('');
       setView(ViewState.AUTH);
     }
   };
@@ -211,7 +218,7 @@ const App: React.FC = () => {
     }]);
 
     if (error) {
-      alert("SEND FAILED: " + error.message);
+      setAuthError("SEND FAILED: " + error.message);
     }
   };
 
@@ -307,13 +314,13 @@ const App: React.FC = () => {
           
           <div className="flex gap-4 mb-8 text-sm justify-center border-b border-gray-800 pb-1">
              <button 
-               onClick={() => { setIsRegistering(false); setAuthError(''); }} 
+               onClick={() => { setIsRegistering(false); setAuthError(''); setAuthSuccess(''); }} 
                className={`px-4 py-2 transition-colors ${!isRegistering ? 'text-terminal-green border-b-2 border-terminal-green' : 'text-terminal-dim hover:text-gray-400'}`}
              >
                LOGIN
              </button>
              <button 
-               onClick={() => { setIsRegistering(true); setAuthError(''); }} 
+               onClick={() => { setIsRegistering(true); setAuthError(''); setAuthSuccess(''); }} 
                className={`px-4 py-2 transition-colors ${isRegistering ? 'text-yellow-500 border-b-2 border-yellow-500' : 'text-terminal-dim hover:text-gray-400'}`}
              >
                REGISTER
@@ -365,7 +372,16 @@ const App: React.FC = () => {
               </div>
             )}
             
+            {/* Error Message */}
             {authError && <div className="text-terminal-alert text-xs p-3 border border-terminal-alert/30 bg-red-900/10 text-center font-bold tracking-wide">{authError}</div>}
+            
+            {/* Success Message */}
+            {authSuccess && (
+              <div className="flex items-center gap-2 text-terminal-green text-xs p-3 border border-terminal-green/30 bg-green-900/10 justify-center font-bold tracking-wide">
+                <CheckCircle size={16} />
+                {authSuccess}
+              </div>
+            )}
             
             <button 
               disabled={loading} 
