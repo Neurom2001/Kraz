@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ViewState, UserProfile, Room, Message } from './types';
 import { supabase } from './services/supabaseClient';
 import { 
-  Send, Lock, Globe, Terminal, LogOut, Hash, 
+  Send, Lock, Globe, LogOut, Hash, 
   User as UserIcon, Loader2, ArrowRight, 
   Plus, MessageSquare, Trash2, Eye, EyeOff, AlertTriangle
 } from 'lucide-react';
@@ -349,12 +349,8 @@ const App: React.FC = () => {
       {view === ViewState.AUTH && (
         <div className="flex flex-col items-center justify-center flex-1 p-4">
           <div className={`w-full max-w-md border p-8 shadow-[0_0_20px_rgba(0,0,0,0.5)] transition-colors duration-300 ${isRegistering ? 'border-yellow-600 bg-yellow-900/10' : 'border-terminal-green/50 bg-terminal-gray/10'}`}>
-            <div className="flex justify-center mb-4">
-              {isRegistering ? (
-                 <UserIcon size={48} className="text-yellow-500 animate-pulse" />
-              ) : (
-                 <Terminal size={48} className="text-terminal-green animate-pulse" />
-              )}
+            <div className="flex justify-center mb-6">
+              <img src="/logo.png" alt="Chat Logo" className="h-24 w-auto object-contain" />
             </div>
             
             <div className="text-center mb-8">
