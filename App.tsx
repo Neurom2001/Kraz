@@ -36,19 +36,26 @@ const App: React.FC = () => {
 
   const [copied, setCopied] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  
+  // Ref to prevent auth listener from firing during registration flow
+  const isProcessingRegistration = useRef(false);
 
   // --- 1. Authentication & Initialization ---
 
   useEffect(() => {
     // Check active session on load
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
+      if (session && !isProcessingRegistration.current) {
         fetchUserProfile(session.user.id);
       }
     });
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      // If we are in the middle of a registration flow (SignUp -> SignOut), 
+      // ignore these events to prevent the dashboard from flashing.
+      if (isProcessingRegistration.current) return;
+
       if (session) {
         fetchUserProfile(session.user.id);
       } else {
@@ -96,6 +103,9 @@ const App: React.FC = () => {
 
     try {
       if (isRegistering) {
+        // BLOCK the auth listener to prevent flashing dashboard
+        isProcessingRegistration.current = true;
+
         // 1. Sign Up
         const { data: authData, error: authError } = await supabase.auth.signUp({
           email: fakeEmail,
@@ -112,9 +122,12 @@ const App: React.FC = () => {
           if (profileError) console.error("Profile creation failed:", profileError);
           
           // 3. Force Manual Login Logic
-          // Even if Supabase auto-logs in, we sign out to force the user to memorize their password
+          // Supabase auto-logs in after signup. We sign out immediately.
           await supabase.auth.signOut();
           
+          // Registration complete, allow listener again (though we are now signed out)
+          isProcessingRegistration.current = false;
+
           setIsRegistering(false); // Switch to Login View
           setPasswordInput(''); // Clear password field
           setAuthSuccess("REGISTRATION SUCCESSFUL. PLEASE LOGIN."); // Show in-app success message
@@ -128,6 +141,7 @@ const App: React.FC = () => {
         if (error) throw error;
       }
     } catch (err: any) {
+      isProcessingRegistration.current = false; // Reset on error
       let msg = err.message;
       if (msg.includes("Invalid login credentials")) msg = "INVALID USERNAME OR PASSWORD";
       if (msg.includes("User already registered")) msg = "USERNAME ALREADY TAKEN";
