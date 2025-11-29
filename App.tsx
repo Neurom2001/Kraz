@@ -446,14 +446,18 @@ const App: React.FC = () => {
       {view === ViewState.DASHBOARD && (
         <div className="flex-1 overflow-auto p-4">
           <div className="max-w-4xl mx-auto">
+            {/* UPDATED DASHBOARD HEADER */}
             <header className="flex justify-between items-center py-6 border-b border-terminal-green/20 mb-8">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 border border-terminal-green rounded flex items-center justify-center bg-terminal-gray/20">
-                  <UserIcon className="text-terminal-green" size={24} />
-                </div>
+              <div className="flex items-center gap-4">
+                <img 
+                  src="/logo.png" 
+                  alt="Chat Logo" 
+                  className="h-10 w-auto object-contain"
+                  onError={(e) => { e.currentTarget.style.display = 'none'; }} 
+                />
                 <div>
-                  <h1 className="text-xl font-bold tracking-wider text-terminal-green">DASHBOARD</h1>
-                  <p className="text-xs text-terminal-dim">USER: <span className="text-terminal-text">{user?.username}</span></p>
+                  <h1 className="text-xl font-bold tracking-wider text-terminal-green">CHAT</h1>
+                  <p className="text-[10px] text-terminal-dim">USER: <span className="text-terminal-text">{user?.username}</span></p>
                 </div>
               </div>
               <button onClick={handleLogout} className="text-terminal-alert border border-terminal-alert/30 px-3 py-1 text-sm hover:bg-terminal-alert/10 flex items-center gap-2">
