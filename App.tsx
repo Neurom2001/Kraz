@@ -24,11 +24,12 @@ const App: React.FC = () => {
 
   const [isRegistering, setIsRegistering] = useState(false);
   const [authError, setAuthError] = useState('');
-  const [authSuccess, setAuthSuccess] = useState(''); // New state for success messages
+  const [authSuccess, setAuthSuccess] = useState('');
   const [loading, setLoading] = useState(false);
 
   const [messageInput, setMessageInput] = useState('');
   const [roomNameInput, setRoomNameInput] = useState('');
+  const [roomError, setRoomError] = useState(''); // Error state for room creation
   const [joinRoomId, setJoinRoomId] = useState('');
   const [joinRoomKey, setJoinRoomKey] = useState('');
   const [joinError, setJoinError] = useState('');
@@ -218,7 +219,8 @@ const App: React.FC = () => {
     }]);
 
     if (error) {
-      setAuthError("SEND FAILED: " + error.message);
+      // Show error in input placeholder temporarily or a toast
+      console.error(error);
     }
   };
 
@@ -231,6 +233,7 @@ const App: React.FC = () => {
 
   const handleCreateRoom = async (e: React.FormEvent) => {
     e.preventDefault();
+    setRoomError('');
     if (!user || !roomNameInput.trim()) return;
     
     const roomId = `RM-${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
@@ -244,7 +247,7 @@ const App: React.FC = () => {
     }]).select().single();
 
     if (error) {
-      alert("Failed to create room: " + error.message);
+      setRoomError("FAILED: " + error.message);
     } else if (data) {
       setRoomNameInput('');
       fetchUserRooms(user.id);
@@ -429,9 +432,12 @@ const App: React.FC = () => {
             <div className="space-y-6">
               <div className="border border-terminal-green/30 bg-terminal-gray/10 p-6">
                  <h3 className="font-bold text-terminal-text mb-4 flex gap-2"><Plus size={20} className="text-terminal-green"/> CREATE ROOM</h3>
-                 <form onSubmit={handleCreateRoom} className="flex gap-2">
-                    <input type="text" value={roomNameInput} onChange={e => setRoomNameInput(e.target.value)} placeholder="ROOM NAME" className="flex-1 bg-terminal-dark border border-terminal-dim/30 px-3 py-2 text-sm text-white outline-none focus:border-terminal-green"/>
-                    <button className="bg-terminal-green/20 text-terminal-green border border-terminal-green/50 px-4 py-2 text-sm font-bold hover:bg-terminal-green hover:text-black">CREATE</button>
+                 <form onSubmit={handleCreateRoom} className="flex gap-2 flex-col">
+                    <div className="flex gap-2">
+                      <input type="text" value={roomNameInput} onChange={e => setRoomNameInput(e.target.value)} placeholder="ROOM NAME" className="flex-1 bg-terminal-dark border border-terminal-dim/30 px-3 py-2 text-sm text-white outline-none focus:border-terminal-green"/>
+                      <button className="bg-terminal-green/20 text-terminal-green border border-terminal-green/50 px-4 py-2 text-sm font-bold hover:bg-terminal-green hover:text-black">CREATE</button>
+                    </div>
+                    {roomError && <p className="text-terminal-alert text-xs mt-1">{roomError}</p>}
                  </form>
               </div>
 
