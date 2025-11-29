@@ -4,7 +4,7 @@ import { supabase } from './services/supabaseClient';
 import { 
   Send, Lock, Globe, Terminal, LogOut, Key, Hash, 
   User as UserIcon, Loader2, ArrowRight, 
-  Plus, MessageSquare, Trash2
+  Plus, MessageSquare, Trash2, Eye, EyeOff, AlertTriangle
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -18,9 +18,11 @@ const App: React.FC = () => {
   const [userRooms, setUserRooms] = useState<Room[]>([]);
   
   // Inputs
-  const [emailInput, setEmailInput] = useState('');
+  // Removed emailInput state as we use username for auth now
   const [passwordInput, setPasswordInput] = useState('');
   const [usernameInput, setUsernameInput] = useState('');
+  const [showPassword, setShowPassword] = useState(false); // Toggle for password visibility
+
   const [isRegistering, setIsRegistering] = useState(false);
   const [authError, setAuthError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -40,14 +42,14 @@ const App: React.FC = () => {
     // Check active session on load
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
-        fetchUserProfile(session.user.id, session.user.email);
+        fetchUserProfile(session.user.id);
       }
     });
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session) {
-        fetchUserProfile(session.user.id, session.user.email);
+        fetchUserProfile(session.user.id);
       } else {
         setUser(null);
         setView(ViewState.AUTH);
@@ -57,7 +59,7 @@ const App: React.FC = () => {
     return () => subscription.unsubscribe();
   }, []);
 
-  const fetchUserProfile = async (userId: string, email?: string) => {
+  const fetchUserProfile = async (userId: string) => {
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
@@ -65,12 +67,15 @@ const App: React.FC = () => {
       .single();
 
     if (data) {
-      setUser({ ...data, email });
+      setUser(data);
       setView(ViewState.DASHBOARD);
       fetchUserRooms(userId);
-    } else if (email) {
-      // Fallback if profile doesn't exist yet
-      setUser({ id: userId, username: email.split('@')[0], email });
+    } else {
+      // Fallback: If profile missing, use the metadata or recreate partial profile
+      // In username-only mode, we might not have email easily accessible unless we store it
+      // but we can try to infer username from the login input if needed, 
+      // though fetching from DB is safer.
+      setUser({ id: userId, username: 'User' });
       setView(ViewState.DASHBOARD);
     }
   };
@@ -80,11 +85,22 @@ const App: React.FC = () => {
     setAuthError('');
     setLoading(true);
 
+    // Supabase requires an email, so we generate a fake one based on the username.
+    // Example: user "mgmg" becomes "mgmg@monochat.local"
+    const sanitizedUsername = usernameInput.trim().toLowerCase().replace(/\s+/g, '');
+    const fakeEmail = `${sanitizedUsername}@monochat.local`;
+
+    if (!sanitizedUsername || !passwordInput) {
+      setAuthError("USERNAME AND PASSWORD REQUIRED");
+      setLoading(false);
+      return;
+    }
+
     try {
       if (isRegistering) {
         // 1. Sign Up
         const { data: authData, error: authError } = await supabase.auth.signUp({
-          email: emailInput,
+          email: fakeEmail,
           password: passwordInput,
         });
         if (authError) throw authError;
@@ -93,24 +109,29 @@ const App: React.FC = () => {
           // 2. Create Profile
           const { error: profileError } = await supabase
             .from('profiles')
-            .insert([{ id: authData.user.id, username: usernameInput }]);
+            .insert([{ id: authData.user.id, username: usernameInput.trim() }]);
           
           if (profileError) {
              console.error("Profile creation failed:", profileError);
           }
-          alert("Registration successful! You can now login.");
+          alert("REGISTRATION SUCCESSFUL. PLEASE LOGIN.");
           setIsRegistering(false);
+          setPasswordInput(''); // Clear password for safety
         }
       } else {
         // Login
         const { error } = await supabase.auth.signInWithPassword({
-          email: emailInput,
+          email: fakeEmail,
           password: passwordInput,
         });
         if (error) throw error;
       }
     } catch (err: any) {
-      setAuthError(err.message);
+      // Beautify error message
+      let msg = err.message;
+      if (msg.includes("Invalid login credentials")) msg = "INVALID USERNAME OR PASSWORD";
+      if (msg.includes("User already registered")) msg = "USERNAME ALREADY TAKEN";
+      setAuthError(msg.toUpperCase());
     } finally {
       setLoading(false);
     }
@@ -120,6 +141,8 @@ const App: React.FC = () => {
     await supabase.auth.signOut();
     setUser(null);
     setMessages([]);
+    setUsernameInput('');
+    setPasswordInput('');
   };
 
   // --- 2. Data Fetching & Realtime ---
@@ -189,7 +212,10 @@ const App: React.FC = () => {
       room_id: view === ViewState.PRIVATE_ROOM && activeRoom ? activeRoom.id : null
     }]);
 
-    if (error) console.error("Send failed:", error);
+    if (error) {
+      alert("SEND FAILED: " + error.message);
+      console.error("Send failed:", error);
+    }
   };
 
   const handleDeleteMessage = async (msgId: string, senderId: string) => {
@@ -271,25 +297,54 @@ const App: React.FC = () => {
           <h1 className="text-2xl font-bold mb-6 text-center tracking-widest text-terminal-green">SECURE TERMINAL</h1>
           
           <div className="flex gap-4 mb-6 text-sm justify-center">
-             <button onClick={() => setIsRegistering(false)} className={`pb-1 ${!isRegistering ? 'text-terminal-green border-b border-terminal-green' : 'text-terminal-dim'}`}>LOGIN</button>
-             <button onClick={() => setIsRegistering(true)} className={`pb-1 ${isRegistering ? 'text-terminal-green border-b border-terminal-green' : 'text-terminal-dim'}`}>REGISTER</button>
+             <button onClick={() => { setIsRegistering(false); setAuthError(''); }} className={`pb-1 ${!isRegistering ? 'text-terminal-green border-b border-terminal-green' : 'text-terminal-dim'}`}>LOGIN</button>
+             <button onClick={() => { setIsRegistering(true); setAuthError(''); }} className={`pb-1 ${isRegistering ? 'text-terminal-green border-b border-terminal-green' : 'text-terminal-dim'}`}>REGISTER</button>
           </div>
 
           <form onSubmit={handleAuth} className="space-y-4">
-            {isRegistering && (
-              <div>
-                <label className="text-xs text-terminal-dim block mb-1">USERNAME</label>
-                <input type="text" value={usernameInput} onChange={e => setUsernameInput(e.target.value)} className="w-full bg-terminal-dark border border-terminal-green/30 p-2 text-terminal-text focus:border-terminal-green outline-none" placeholder="Display Name" />
-              </div>
-            )}
             <div>
-              <label className="text-xs text-terminal-dim block mb-1">EMAIL</label>
-              <input type="email" value={emailInput} onChange={e => setEmailInput(e.target.value)} className="w-full bg-terminal-dark border border-terminal-green/30 p-2 text-terminal-text focus:border-terminal-green outline-none" placeholder="user@example.com" />
+              <label className="text-xs text-terminal-dim block mb-1">USERNAME</label>
+              <input 
+                type="text" 
+                value={usernameInput} 
+                onChange={e => setUsernameInput(e.target.value)} 
+                className="w-full bg-terminal-dark border border-terminal-green/30 p-2 text-terminal-text focus:border-terminal-green outline-none" 
+                placeholder="Enter username" 
+                required
+              />
             </div>
+            
             <div>
               <label className="text-xs text-terminal-dim block mb-1">PASSWORD</label>
-              <input type="password" value={passwordInput} onChange={e => setPasswordInput(e.target.value)} className="w-full bg-terminal-dark border border-terminal-green/30 p-2 text-terminal-text focus:border-terminal-green outline-none" placeholder="******" />
+              <div className="relative">
+                <input 
+                  type={showPassword ? "text" : "password"} 
+                  value={passwordInput} 
+                  onChange={e => setPasswordInput(e.target.value)} 
+                  className="w-full bg-terminal-dark border border-terminal-green/30 p-2 text-terminal-text focus:border-terminal-green outline-none pr-10" 
+                  placeholder="******" 
+                  required
+                />
+                <button 
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-2 top-2 text-terminal-dim hover:text-terminal-green"
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
             </div>
+
+            {/* Warning Message for Registration */}
+            {isRegistering && (
+              <div className="flex items-start gap-2 bg-yellow-900/20 border border-yellow-700/50 p-3 text-xs text-yellow-500/90">
+                <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold block mb-1">WARNING: NO ACCOUNT RECOVERY</span>
+                  System does not use email verification. If you lose your password, your account cannot be recovered. Please memorize your credentials.
+                </div>
+              </div>
+            )}
             
             {authError && <div className="text-terminal-alert text-xs p-2 border border-terminal-alert/30">{authError}</div>}
             
